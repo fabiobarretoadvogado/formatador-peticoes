@@ -619,9 +619,11 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(regras[2]["estilo_destino"], "FB - Qualificação das Partes")
 
             resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
-            self.assertFalse(resultado["aprovado"])
-            self.assertGreater(resultado["ambiguos"], 0)
+            self.assertTrue(resultado["aprovado"])
+            self.assertEqual(resultado["ambiguos"], 0)
             final = Document(resultado["docx"])
+            local_data = next(p for p in final.paragraphs if p.text == "Aracaju/SE, 22 de julho de 2026.")
+            self.assertEqual(local_data.style.name, "FB - Fechamento")
             textos = [p.text for p in final.paragraphs]
             self.assertFalse(any(t.lstrip().startswith(("##", "###", ">")) or "**" in t for t in textos))
             self.assertEqual(len(final.tables), 2)
