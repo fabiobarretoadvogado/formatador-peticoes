@@ -28,6 +28,7 @@ class CorpoDiscursivoTests(unittest.TestCase):
             "A parte autora não comprova o requisito necessário ao acolhimento do pedido.",
             "Por isso, a conclusão decorre dos documentos apresentados nos autos.",
             "Este parágrafo apresenta os fundamentos da pretensão deduzida em juízo.",
+            "A parte autora apresenta os fatos relevantes para o correto julgamento da demanda, preservando integralmente o conteúdo original.",
         ):
             with self.subTest(texto=texto):
                 item = classificar_um(self.paragrafo(texto))
