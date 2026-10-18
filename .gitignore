@@ -17,7 +17,7 @@ dist/
 *.spec.bak
 .venv-build/
 .venv*/
-.deps/
+.deps*/
 .qa/
 *.egg-info/
 execucoes/

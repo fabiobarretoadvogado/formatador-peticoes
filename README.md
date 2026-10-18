@@ -88,22 +88,6 @@ da execução. Se qualquer um deles estiver ausente, o processamento é interrom
 com uma mensagem de recuperação. O sistema nunca cria nem substitui silenciosamente
 o modelo oficial ou suas regras.
 
-## Botão de arrastar e soltar
-
-Para executar sem digitar o comando, use `formatar_arrastar.cmd` ou um atalho
-dele no Desktop. Arraste um ou mais arquivos `.docx` ou `.md` para o atalho. O launcher:
-
-- cria uma cópia do original em `entrada/`;
-- cria uma pasta isolada em `execucoes/` para cada arquivo;
-- preserva o original e copia o modelo oficial e as regras para a execução;
-- executa o pipeline completo e abre a pasta `saida/`;
-- informa quando há pendências em `trabalho/solicitacoes_semanticas.json`.
-
-O DOCX final também oculta no painel do Word os estilos nativos, mantendo visíveis
-apenas os estilos autorais `FB - ...`.
-
-O arquivo original nunca é usado como saída nem sobrescrito.
-
 ## Aplicativo portátil para a equipe
 
 O launcher recomendado para distribuição é `FormatadorPeticoes.exe`. Ele inclui
@@ -156,7 +140,7 @@ espaçamentos e observações visuais. Esses campos orientam a classificação
 semântica; o `modelos/modelo_oficial.docx` continua sendo a fonte de verdade da
 aparência no Word.
 
-A versão resumida para consulta humana está em `modelos/catalogo_estilos.md`.
+O catálogo semântico para consulta está em `modelos/estilos.json`.
 
 Algumas distinções importantes:
 
