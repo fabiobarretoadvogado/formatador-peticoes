@@ -1,0 +1,67 @@
+name: Testar e publicar aplicativo Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Instalar dependências
+        run: python -m pip install -e ".[build]" pytest
+      - name: Testar aplicativo
+        run: python -m pytest -q
+      - name: Identificar versão
+        id: version
+        shell: pwsh
+        run: |
+          $version = python -c "from app_version import VERSION; print(VERSION)"
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+      - name: Verificar se a versão já foi publicada
+        id: release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: pwsh
+        run: |
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name'
+          if ($LASTEXITCODE -ne 0) { throw 'Não foi possível consultar releases.' }
+          "exists=$($releases -contains $env:TAG)".ToLower() >> $env:GITHUB_OUTPUT
+      - name: Garantir Inno Setup
+        if: github.event_name != 'pull_request' && steps.release.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar Inno Setup.' }
+          }
+      - name: Compilar e validar portátil e instalador
+        if: github.event_name != 'pull_request' && steps.release.outputs.exists == 'false'
+        run: python scripts/build_instalador.py
+      - name: Publicar nova versão
+        if: github.event_name != 'pull_request' && steps.release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: pwsh
+        run: |
+          gh release create $env:TAG 'dist/FormatadorPeticoes-Setup.exe' "dist/FormatadorPeticoes-portatil-*.zip" --target $env:GITHUB_SHA --title "Formatador de Petições $env:TAG" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a release.' }

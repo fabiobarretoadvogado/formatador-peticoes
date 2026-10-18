@@ -1,0 +1,194 @@
+{
+  "estilos_permitidos": [
+    "FB - Endereçamento",
+    "FB - Identificação do Processo",
+    "FB - Resumo",
+    "FB - Qualificação das Partes",
+    "FB - Identificação da Ação",
+    "FB - Título Principal",
+    "FB - Título Secundário",
+    "FB - Corpo",
+    "FB - Corpo com Recuo",
+    "FB - Tabela",
+    "FB - Descrição",
+    "FB - Citação",
+    "FB - Lista",
+    "FB - Pedido",
+    "FB - Fechamento",
+    "FB - Assinatura",
+    "FB - Nota de Rodapé",
+    "FB - Rodapé"
+  ],
+  "estilo_padrao": "FB - Corpo",
+  "tipo_peca_suportado": "peticao_inicial",
+  "formatos_entrada_suportados": ["docx", "markdown"],
+  "perfil_markdown": {
+    "versao": 1,
+    "codificacoes": ["utf-8", "utf-8-sig"],
+    "titulos": ["##", "###"],
+    "citacoes_niveis": 1,
+    "listas_niveis": 1,
+    "listas": ["numerica", "alfabetica", "marcadores"],
+    "tabelas": "gfm_simples",
+    "negrito": "intermediario_preserva_saida_segue_estilos",
+    "italico": true,
+    "imagens": "locais_relativas_isoladas_em_bloco",
+    "html": false,
+    "links": false,
+    "notas_rodape": false,
+    "blocos_codigo": false
+  },
+  "regras_contextuais": {
+    "peticao_inicial": {
+      "descricao": "Único tipo de peça suportado nesta versão: peça inaugural dirigida ao juízo de origem.",
+      "aplicar": ["endereçamento ao juízo de origem", "identificação do processo quando existente", "qualificação das partes", "identificação da ação", "fatos e fundamentos", "pedidos", "fechamento e assinatura"],
+      "nao_aplicar": ["estruturas específicas de recursos, contestações, réplicas, manifestações ou outras peças ainda não suportadas"]
+    },
+    "normalizacao_estrutural": {
+      "aplicar_quando_presente": ["converter ## e ### em níveis de título sem manter os marcadores", "converter > em citação sem manter o marcador", "converter tabela textual delimitada por barras verticais em tabela Word", "remover marcadores duplos de negrito e aplicar as regras de negrito do estilo"]
+    }
+  },
+  "limiares": {"automatico": 0.95, "conferencia": 0.80, "conflito_semantico": 0.90},
+  "regras": {
+    "FB - Resumo": {"somente_primeira_pagina": true, "recuo_esquerdo_cm": 9.0, "borda_inferior_no_fim": "CCB595"},
+    "FB - Qualificação das Partes": {"preservar_negrito_em_nomes": true, "restringir_negrito_a": "nomes de pessoas, entidades, ações e fases processuais"},
+    "FB - Identificação da Ação": {"keep_with_next": true, "caixa_alta": true, "separar_do_anterior_pt": 12},
+    "FB - Título Principal": {"keep_with_next": true, "permitir_paragrafo_longo": false, "separar_do_anterior_pt": 36, "lista_multinivel": "1 / 1.1", "nivel_lista": 0, "negrito_integral": true},
+    "FB - Título Secundário": {"keep_with_next": true, "permitir_paragrafo_longo": false, "separar_do_anterior_pt": 36, "lista_multinivel": "1 / 1.1", "nivel_lista": 1, "negrito_integral": true},
+    "FB - Citação": {"recuo_esquerdo_cm": 3.0, "permitir_aspas": true},
+    "FB - Lista": {"recuo_esquerdo_cm": 3.0, "recuo_primeira_linha_cm": 0.0},
+    "FB - Pedido": {"recuo_esquerdo_cm": 3.0, "recuo_primeira_linha_cm": 0.0},
+    "FB - Assinatura": {"centralizar_imagem": true},
+    "negrito_direto_remover_estilos": ["FB - Corpo", "FB - Corpo com Recuo", "FB - Citação", "FB - Lista", "FB - Pedido"]
+  },
+  "formatacao_estilos": {
+    "FB - Endereçamento": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": true, "italico": false, "alinhamento": "esquerda", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": true},
+    "FB - Identificação do Processo": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": true, "italico": false, "alinhamento": "esquerda", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false},
+    "FB - Resumo": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 10, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 9, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false, "observacoes": ["somente na primeira página", "linha inferior CCB595 apenas no último parágrafo do bloco"]},
+    "FB - Qualificação das Partes": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 1, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false, "observacoes": ["preservar negrito nos nomes quando já existir"]},
+    "FB - Identificação da Ação": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": true, "italico": false, "alinhamento": "centralizado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": true, "observacoes": ["usar caixa alta quando essa for a forma do título da ação"]},
+    "FB - Título Principal": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": true, "italico": false, "alinhamento": "esquerda", "recuo_esquerdo_cm": 0.5, "recuo_primeira_linha_cm": -0.5, "espaco_antes_pt": 36, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": true, "observacoes": ["nível 1 da lista multinível decimal: 1, 2, 3", "número e texto integralmente em negrito e em 12 pt", "números digitados no título são removidos para evitar duplicidade"]},
+    "FB - Título Secundário": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": true, "italico": false, "alinhamento": "esquerda", "recuo_esquerdo_cm": 1, "recuo_primeira_linha_cm": -0.5, "espaco_antes_pt": 36, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": true, "observacoes": ["nível 2 da mesma lista multinível decimal: 1.1, 1.2, 2.1", "número e texto integralmente em negrito e em 12 pt", "números digitados no título são removidos para evitar duplicidade"]},
+    "FB - Corpo": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 1, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false},
+    "FB - Corpo com Recuo": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 1.25, "recuo_primeira_linha_cm": 1, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false},
+    "FB - Tabela": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "esquerda", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 0, "espaco_depois_pt": 0, "entrelinhas": 1.0, "manter_com_proximo": false, "observacoes": ["aplicado aos parágrafos dentro de células de tabela"]},
+    "FB - Descrição": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 8, "negrito": false, "italico": false, "alinhamento": "esquerda", "recuo_esquerdo_cm": 2, "recuo_direito_cm": 2, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 6, "espaco_depois_pt": 6, "entrelinhas": 1.0, "manter_com_proximo": false, "observacoes": ["aplicar imediatamente abaixo de imagem ou documento reproduzido", "o rótulo inicia com Descrição:"]},
+    "FB - Citação": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 3, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false},
+    "FB - Lista": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 3, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false},
+    "FB - Pedido": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 3, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 12, "espaco_depois_pt": 12, "entrelinhas": 1.25, "manter_com_proximo": false},
+    "FB - Fechamento": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": false, "italico": false, "alinhamento": "centralizado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 0, "espaco_depois_pt": 0, "entrelinhas": 1.0, "manter_com_proximo": false, "observacoes": ["data e fórmula de encerramento sem espaçamento antes ou depois"]},
+    "FB - Assinatura": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 12, "negrito": true, "italico": false, "alinhamento": "centralizado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 0, "espaco_depois_pt": 0, "entrelinhas": 1.0, "manter_com_proximo": false, "observacoes": ["imagem, nome e OAB sem espaçamento antes ou depois"]},
+    "FB - Nota de Rodapé": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 10, "negrito": false, "italico": false, "alinhamento": "justificado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 0, "espaco_depois_pt": 0, "entrelinhas": 1.0, "manter_com_proximo": false, "observacoes": ["aplicar ao texto da nota, não ao marcador numérico"]},
+    "FB - Rodapé": {"fonte": "Segoe UI Variable Text", "tamanho_pt": 10, "negrito": false, "italico": false, "alinhamento": "centralizado", "recuo_esquerdo_cm": 0, "recuo_primeira_linha_cm": 0, "espaco_antes_pt": 0, "espaco_depois_pt": 0, "entrelinhas": 1.0, "manter_com_proximo": false}
+  },
+  "catalogo_semantico": {
+    "FB - Endereçamento": {
+      "descricao": "Fórmula que identifica o juízo, tribunal ou autoridade a quem a peça é dirigida.",
+      "aplicar_quando": ["O parágrafo é o destinatário formal da petição.", "O texto começa com fórmula como Excelentíssimo Senhor Juiz ou Ao Juízo."],
+      "nao_aplicar_quando": ["O parágrafo apenas informa o número do processo.", "O texto identifica a ação, desenvolve argumentos ou apresenta pedidos."],
+      "exemplos": ["AO JUÍZO DA 26ª VARA CÍVEL DA COMARCA DE ARACAJU - SE"]
+    },
+    "FB - Identificação do Processo": {
+      "descricao": "Linha curta que informa o número ou a identificação formal dos autos.",
+      "aplicar_quando": ["O parágrafo contém o número do processo, autos ou referência processual no bloco inicial."],
+      "nao_aplicar_quando": ["A palavra processo aparece no meio de uma argumentação.", "O parágrafo é o endereçamento ou o título da demanda."],
+      "exemplos": ["PROCESSO Nº 0001234-56.2025.8.26.0001"]
+    },
+    "FB - Resumo": {
+      "descricao": "Ementa, síntese ou resumo inicial da petição.",
+      "aplicar_quando": ["O bloco está na primeira página.", "O resumo vem depois da identificação do processo e antes da qualificação das partes."],
+      "nao_aplicar_quando": ["O parágrafo é corpo argumentativo comum.", "O texto é uma conclusão ou pedido final."],
+      "exemplos": ["RESUMO: pedido de restituição de valores e regularização registral."]
+    },
+    "FB - Qualificação das Partes": {
+      "descricao": "Apresentação inicial das partes, da representação e da posição processual.",
+      "aplicar_quando": ["O texto identifica autor, réu, inventariante, espólio ou representante.", "O bloco introduz a parte antes do desenvolvimento da petição inicial."],
+      "nao_aplicar_quando": ["O texto apenas nomeia a ação.", "O texto já desenvolve fatos, fundamentos ou pedidos."],
+      "exemplos": ["Maria, já qualificada nos autos, vem respeitosamente à presença de Vossa Excelência."]
+    },
+    "FB - Identificação da Ação": {
+      "descricao": "Denominação centralizada da ação, do rito ou do procedimento.",
+      "aplicar_quando": ["O parágrafo nomeia a demanda ou o rito em bloco inicial destacado.", "O texto é curto, identificador e não desenvolve argumentação."],
+      "nao_aplicar_quando": ["O texto é um título de seção argumentativa.", "O parágrafo contém apenas o número do processo."],
+      "exemplos": ["AÇÃO DE CUMPRIMENTO DE SENTENÇA", "RITO: ARROLAMENTO COMUM"]
+    },
+    "FB - Título Principal": {
+      "descricao": "Título de primeiro nível que inicia uma seção principal da fundamentação ou dos pedidos.",
+      "aplicar_quando": ["O título corresponde a Heading 1 ou Título 1 no documento de origem.", "O título organiza uma seção principal, como DOS FATOS ou DOS PEDIDOS."],
+      "nao_aplicar_quando": ["O texto é o nome da ação ou do rito.", "O texto é uma subseção ou apenas uma frase em negrito dentro do corpo."],
+      "exemplos": ["1. DOS FATOS", "DA AVERBAÇÃO E DOS DÉBITOS", "DOS PEDIDOS"]
+    },
+    "FB - Título Secundário": {
+      "descricao": "Título de segundo nível que organiza uma subseção dentro de uma seção principal.",
+      "aplicar_quando": ["O título corresponde a Heading 2 ou Título 2 no documento de origem.", "O título desenvolve uma subdivisão, como 3.1. Da prova documental."],
+      "nao_aplicar_quando": ["O texto é uma seção principal.", "O negrito serve apenas para destacar uma expressão no corpo."],
+      "exemplos": ["3.1. Da prova documental", "DA RESPONSABILIDADE DO RÉU"]
+    },
+    "FB - Corpo": {
+      "descricao": "Parágrafo jurídico corrido usado para fatos, fundamentos, transições e introduções de pedidos.",
+      "aplicar_quando": ["O texto desenvolve uma ideia em prosa.", "O texto é a frase introdutória do bloco de pedidos, antes dos itens numerados."],
+      "nao_aplicar_quando": ["O parágrafo tem função estrutural mais específica, como título, citação, assinatura ou pedido numerado."],
+      "exemplos": ["A regularização registral do imóvel foi concluída.", "Diante do exposto, requer-se:"]
+    },
+    "FB - Corpo com Recuo": {
+      "descricao": "Bloco informativo destacado do corpo corrido, sem ser citação, lista ou pedido.",
+      "aplicar_quando": ["O parágrafo reúne dados estruturados ou informação operacional que precisa ficar visualmente destacada.", "O bloco não possui a função de transcrever fonte ou formular pedido numerado."],
+      "nao_aplicar_quando": ["O texto é uma citação literal.", "O texto é item de lista ou pedido final.", "O recuo existe apenas porque o parágrafo é uma passagem comum do corpo."],
+      "exemplos": ["Banco: Banese; Agência: 068; Conta corrente: 01001364-3"]
+    },
+    "FB - Tabela": {
+      "descricao": "Texto contido em células de tabelas do documento.",
+      "aplicar_quando": ["O parágrafo está dentro de uma tabela."],
+      "nao_aplicar_quando": ["O texto está no corpo principal, mesmo que contenha vários campos ou valores."],
+      "exemplos": ["Célula com descrição, valor ou informação comparável"]
+    },
+    "FB - Descrição": {
+      "descricao": "Legenda ou descrição textual colocada imediatamente abaixo de uma imagem ou documento reproduzido.",
+      "aplicar_quando": ["O parágrafo começa com Descrição:.", "O texto identifica ou resume a imagem que o precede."],
+      "nao_aplicar_quando": ["O texto é prosa jurídica do corpo principal.", "A imagem é apenas uma assinatura sem descrição textual."],
+      "exemplos": ["Descrição: declaração comprova a atuação profissional no período indicado."]
+    },
+    "FB - Citação": {
+      "descricao": "Transcrição destacada de lei, decisão, doutrina, documento ou fala de terceiro.",
+      "aplicar_quando": ["O trecho é apresentado como citação literal ou transcrição.", "O documento de origem usa estilo Quote/Citação ou o trecho tem aspas delimitadoras e função de fonte."],
+      "nao_aplicar_quando": ["O parágrafo é apenas uma argumentação própria com recuo.", "O recuo identifica lista ou pedido final."],
+      "exemplos": ["'A tutela provisória será concedida quando...'", "Trecho transcrito de decisão judicial"]
+    },
+    "FB - Lista": {
+      "descricao": "Item de lista ou enumeração que não constitui pedido final.",
+      "aplicar_quando": ["O parágrafo possui marcador ou numeração.", "A enumeração apresenta requisitos, documentos, fatos ou alternativas fora do bloco final de pedidos."],
+      "nao_aplicar_quando": ["O item é um pedido numerado dentro do bloco final de pedidos; nesse caso use FB - Pedido.", "O número identifica o processo ou uma seção."],
+      "exemplos": ["a) procuração;", "1. documentos necessários:", "- certidão atualizada"]
+    },
+    "FB - Pedido": {
+      "descricao": "Item numerado que formula um pedido concreto no bloco final de requerimentos.",
+      "aplicar_quando": ["O item está dentro do bloco DOS PEDIDOS ou equivalente.", "O item numerado expressa uma providência requerida ao juízo."],
+      "nao_aplicar_quando": ["O item é uma lista de requisitos ou documentos fora do bloco final.", "O texto é a frase introdutória dos pedidos; use FB - Corpo.", "O texto apenas descreve fatos ou fundamentos."],
+      "exemplos": ["I. a juntada da certidão atualizada;", "II. a expedição de alvará;"]
+    },
+    "FB - Fechamento": {
+      "descricao": "Fórmula de encerramento da petição, incluindo local, data e expressões de deferimento.",
+      "aplicar_quando": ["O parágrafo encerra a petição inicial após os pedidos.", "O texto contém Termos em que, Pede deferimento, local ou data em bloco final."],
+      "nao_aplicar_quando": ["O texto é o nome ou a identificação profissional do signatário."],
+      "exemplos": ["Termos em que, pede deferimento.", "Aracaju/SE, 13 de julho de 2026"]
+    },
+    "FB - Assinatura": {
+      "descricao": "Nome do signatário e sua identificação profissional.",
+      "aplicar_quando": ["O bloco apresenta o nome do advogado, parte ou representante que assina.", "O texto contém OAB ou identificação profissional associada à assinatura."],
+      "nao_aplicar_quando": ["O texto é a fórmula de encerramento ou a data.", "O nome aparece apenas na qualificação das partes."],
+      "exemplos": ["Fábio Augusto Mendonça Barreto", "Advogado - OAB/SE nº 12.563"]
+    },
+    "FB - Nota de Rodapé": {
+      "descricao": "Texto explicativo ou referência inserido na área de notas de rodapé.",
+      "aplicar_quando": ["O parágrafo pertence ao conteúdo da nota de rodapé."],
+      "nao_aplicar_quando": ["O texto está no corpo principal.", "O número ou marcador da nota é tratado isoladamente."],
+      "exemplos": ["Nota explicativa ou referência bibliográfica no rodapé da página"]
+    },
+    "FB - Rodapé": {
+      "descricao": "Conteúdo fixo ou variável da área de rodapé da página, como identificação ou paginação.",
+      "aplicar_quando": ["O texto pertence ao rodapé da seção do documento."],
+      "nao_aplicar_quando": ["O texto é uma nota de rodapé vinculada a uma chamada no corpo."],
+      "exemplos": ["Nome do escritório", "Página 1 de 3"]
+    }
+  }
+}
