@@ -17,6 +17,16 @@ RE_PROCESSO = re.compile(
 RE_PEDIDO = re.compile(r"^\s*(ante\s+o\s+exposto|diante\s+do\s+exposto|requer(?:-se)?|pede\s+deferimento|dos\s+pedidos)\b", re.I)
 RE_FECHAMENTO = re.compile(r"\b(termos em que|pede deferimento|nestes termos)\b", re.I)
 RE_DATA = re.compile(r"\b\d{1,2}\s+de\s+[a-zç]+\s+de\s+\d{4}\b", re.I)
+DATA_ENCERRAMENTO = (
+    r"(?:\d{1,2}(?:º)?\s+de\s+"
+    r"(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)"
+    r"\s+de\s+\d{4}|\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|"
+    r"(?:na\s+)?data\s+(?:do\s+protocolo(?:\s+eletr[oô]nico)?|"
+    r"da\s+assinatura(?:\s+(?:eletr[oô]nica|digital))?))"
+)
+RE_DATA_ENCERRAMENTO = re.compile(rf"^{DATA_ENCERRAMENTO}\.?$", re.I)
+RE_LOCAL_DATA = re.compile(rf"^(?P<local>[^,\n]{{1,100}}),\s*{DATA_ENCERRAMENTO}\.?$", re.I)
+RE_UF_FINAL = re.compile(r"\s*(?:[/–-]\s*[A-Z]{2}|\(\s*[A-Z]{2}\s*\))$", re.I)
 RE_LISTA = re.compile(r"^\s*(?:\d+[.)]|[a-z][.)]|[ivxlcdm]+[.)]|[-–—•])\s+", re.I)
 RE_LISTA_NUMERADA = re.compile(r"^\s*(?:\d+[.)]|[a-z][.)]|[ivxlcdm]+[.)])\s+", re.I)
 RE_ASSINATURA = re.compile(
@@ -50,6 +60,31 @@ def parece_qualificacao(texto: str) -> bool:
     return bool(
         RE_QUALIFICACAO.search(texto)
         or (RE_DOCUMENTO_PARTE.search(texto) and RE_DADOS_PARTE.search(texto))
+    )
+
+
+def parece_fechamento_local_data(p: dict, texto: str, anterior: str = "", seguinte: str = "") -> bool:
+    """Reconhece a linha de local/data, sem confundi-la com fatos datados."""
+    texto = " ".join(texto.split())
+    local_data = RE_LOCAL_DATA.fullmatch(texto)
+    if local_data:
+        cidade = RE_UF_FINAL.sub("", local_data["local"]).strip()
+        palavras = cidade.replace("-", " ").split()
+        # Exige formato de nome de localidade; frases como "O contrato foi
+        # assinado em Aracaju, ..." continuam sendo conteúdo do corpo.
+        if 1 <= len(palavras) <= 8 and all(
+            palavra.casefold() in {"de", "da", "do", "das", "dos", "e"}
+            or (palavra[0].isupper() and palavra.replace("'", "").replace("’", "").isalpha())
+            or bool(re.fullmatch(r"d['’][A-ZÀ-ÖØ-Ý][a-zA-ZÀ-ÖØ-öø-ÿ]+", palavra))
+            for palavra in palavras
+        ):
+            return True
+    if not RE_DATA_ENCERRAMENTO.fullmatch(texto):
+        return False
+    return bool(
+        p.get("posicao_relativa", 0) >= 0.70
+        or RE_FECHAMENTO.search(anterior)
+        or RE_ASSINATURA.search(seguinte)
     )
 
 
@@ -95,6 +130,8 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         estilo, conf, motivo = "FB - Endereçamento", 0.99, "Fórmula de endereçamento judicial"
     elif RE_PROCESSO.search(texto) and len(palavras) <= 16:
         estilo, conf, motivo = "FB - Identificação do Processo", 0.99, "Identificação curta de processo/autos"
+    elif parece_fechamento_local_data(p, texto, anterior, seguinte):
+        estilo, conf, motivo = "FB - Fechamento", 0.99, "Linha de encerramento com local e data ou referência ao protocolo/assinatura"
     elif parece_nome_assinatura(p, texto, anterior, seguinte):
         estilo, conf, motivo = "FB - Assinatura", 0.98, "Nome do subscritor junto ao registro profissional"
     elif p.get("posicao_relativa", 1) < 0.30 and parece_qualificacao(texto):
@@ -111,8 +148,6 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         estilo, conf, motivo = "FB - Fechamento", 0.97, "Fórmula convencional de fechamento"
     elif RE_ASSINATURA.search(texto) and len(palavras) <= 18:
         estilo, conf, motivo = "FB - Assinatura", 0.96, "Referência curta a advogado ou OAB"
-    elif RE_DATA.search(texto) and len(palavras) <= 18:
-        estilo, conf, motivo = "FB - Fechamento", 0.93, "Local/data em bloco curto"
     elif RE_PEDIDO.search(texto):
         estilo, conf, motivo = "FB - Corpo", 0.97, "Parágrafo introdutório do bloco de pedidos"
     elif p.get("possui_numeracao") or RE_LISTA.search(texto):
@@ -150,12 +185,13 @@ def classificar(estrutura: dict) -> dict:
             em_resumo = True
 
         fechamento_proximo = any(
-            RE_DATA.search(proximo.get("texto", "")) or RE_FECHAMENTO.search(proximo.get("texto", ""))
+            parece_fechamento_local_data(proximo, proximo.get("texto", ""))
+            or RE_FECHAMENTO.search(proximo.get("texto", ""))
             for proximo in ps[i + 1:i + 12]
         )
         if RE_BLOCO_PEDIDOS.search(texto) or (RE_PEDIDO.search(texto) and fechamento_proximo):
             em_pedidos = True
-        elif em_pedidos and (RE_DATA.search(texto) or RE_FECHAMENTO.search(texto)):
+        elif em_pedidos and (parece_fechamento_local_data(p, texto) or RE_FECHAMENTO.search(texto)):
             em_pedidos = False
 
         anterior = next(

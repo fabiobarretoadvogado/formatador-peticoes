@@ -170,7 +170,9 @@
       "descricao": "Fórmula de encerramento da petição, incluindo local, data e expressões de deferimento.",
       "aplicar_quando": ["O parágrafo encerra a petição inicial após os pedidos.", "O texto contém Termos em que, Pede deferimento, local ou data em bloco final."],
       "nao_aplicar_quando": ["O texto é o nome ou a identificação profissional do signatário."],
-      "exemplos": ["Termos em que, pede deferimento.", "Aracaju/SE, 13 de julho de 2026"]
+      "exemplos": ["Termos em que, pede deferimento.", "Aracaju/SE, 13 de julho de 2026",
+        "Aracaju/SE, data do protocolo.",
+        "Aracaju/SE, data da assinatura eletrônica."]
     },
     "FB - Assinatura": {
       "descricao": "Nome do signatário e sua identificação profissional.",

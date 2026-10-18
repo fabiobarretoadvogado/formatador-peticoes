@@ -47,6 +47,23 @@ def _amostra(path: Path):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_local_e_data_do_protocolo_recebem_estilo_de_fechamento(self):
+        with tempfile.TemporaryDirectory() as d:
+            entrada = Path(d) / "fechamento.docx"
+            doc = Document()
+            doc.add_paragraph("Termos em que, pede deferimento.")
+            doc.add_paragraph("Aracaju/SE, data do protocolo.")
+            doc.add_paragraph("FÁBIO AUGUSTO MENDONÇA BARRETO")
+            doc.add_paragraph("OAB/SE nº 12.563")
+            doc.save(entrada)
+            original = entrada.read_bytes()
+            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            final = Document(resultado["docx"])
+            linha = next(p for p in final.paragraphs if p.text == "Aracaju/SE, data do protocolo.")
+            self.assertEqual(linha.style.name, "FB - Fechamento")
+            self.assertEqual(linha.alignment if linha.alignment is not None else linha.style.paragraph_format.alignment, 1)
+            self.assertEqual(entrada.read_bytes(), original)
+
     def test_pipeline_interrompe_sem_artefatos_oficiais(self):
         with tempfile.TemporaryDirectory() as d:
             base = Path(d)
