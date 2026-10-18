@@ -40,6 +40,19 @@ Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; GroupDesc
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Somente bibliotecas do formato antigo. Documentos e resultados ficam fora de {app}.
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\modelos"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\versoes"
+Type: filesandordirs; Name: "{app}\.confirmacoes"
+Type: files; Name: "{app}\versao_ativa.json"
+Type: files; Name: "{app}\transacao_atualizacao.json"
+Type: files; Name: "{app}\atualizacao.lock"
+Type: files; Name: "{app}\erro_atualizacao.txt"
+
 [Icons]
 Name: "{group}\Formatador de Petições Iniciais"; Filename: "{app}\FormatadorPeticoes.exe"
 Name: "{autodesktop}\Formatador de Petições Iniciais"; Filename: "{app}\FormatadorPeticoes.exe"; Tasks: desktopicon

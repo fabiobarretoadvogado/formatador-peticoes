@@ -39,6 +39,8 @@ def gerar_relatorio(
         linhas.append(f"- {total} parágrafo(s) classificados como **{estilo}**.")
     linhas.extend([
         f"- {aplicacao.get('formatacoes_diretas_removidas', 0)} propriedade(s) de formatação direta incompatível removida(s).",
+        f"- {aplicacao.get('cabecalhos_negrito_caixa_alta', 0)} parágrafo(s) de endereçamento ou identificação do processo receberam negrito integral e caixa alta visual.",
+        f"- {len(aplicacao.get('margens_modelo', []))} seção(ões) receberam as margens e as distâncias de cabeçalho/rodapé do modelo oficial.",
         f"- {papel_timbrado.get('cabecalhos_adicionados', 0)} cabeçalho(s) vazio(s) receberam o papel timbrado do modelo oficial.",
         f"- {papel_timbrado.get('rodapes_adicionados', 0)} rodapé(s) vazio(s) receberam a paginação do modelo oficial; conteúdo existente foi preservado.",
         f"- {aplicacao.get('negritos_qualificacao_ajustados', 0)} parágrafo(s) de qualificação tiveram o negrito restringido a nomes, entidades, ações e fases processuais.",

@@ -119,7 +119,8 @@ except Exception:
 
 from scripts.pipeline import executar, executar_docx
 from app_version import VERSION
-from scripts.atualizacoes import baixar_instalador, consultar_atualizacao
+from scripts.atualizacoes import consultar_atualizacao, preparar_incremental, iniciar_atualizacao
+from scripts.iniciar_aplicativo import confirmar_inicio
 
 
 APP_NAME = "Formatador de Petições Iniciais"
@@ -1322,8 +1323,8 @@ class Aplicativo(tk.Tk):
                 elif evento == "atualizacao_erro":
                     self._encerrar_atualizacao()
                     messagebox.showerror("Atualizações", str(valor))
-                elif evento == "instalador_pronto":
-                    self._executar_instalador(Path(valor))
+                elif evento == "atualizacao_preparada":
+                    self._reiniciar_atualizado(valor)
         except queue.Empty:
             pass
         self.after(100, self._ler_fila)
@@ -1539,6 +1540,9 @@ class Aplicativo(tk.Tk):
         if self.em_execucao or self.atualizando:
             messagebox.showinfo("Atualizações", "Conclua a operação atual antes de atualizar.")
             return
+        if not getattr(sys, "frozen", False) or pasta_do_aplicativo().parent.name != "versoes":
+            messagebox.showinfo("Atualizações", "O novo atualizador está disponível na versão instalada do programa.")
+            return
         self.atualizando = True
         self.botao_atualizacao.configure(state="disabled")
         self.status_var.set("Consultando novas versões no GitHub…")
@@ -1560,35 +1564,40 @@ class Aplicativo(tk.Tk):
             self._encerrar_atualizacao()
             messagebox.showinfo("Atualizações", "Há uma nova versão. Conclua a formatação e a revisão antes de instalá-la.")
             return
+        if atualizacao.tipo != "incremental":
+            self._encerrar_atualizacao()
+            messagebox.showinfo("Atualizações", "A nova versão ainda não oferece atualização automática. Tente novamente quando a publicação estiver completa.")
+            return
         if not messagebox.askyesno(
             "Atualizações",
             f"A versão {atualizacao.versao} está disponível.\n\n"
-            "Baixar e abrir o instalador? O programa será fechado após o download. "
+            "Atualizar e reiniciar? O programa prepara a atualização e reabre automaticamente. "
             "Seus documentos e resultados serão preservados.",
         ):
             self._encerrar_atualizacao()
             return
-        self.status_var.set("Baixando e verificando o instalador…")
+        self.status_var.set("Preparando a atualização e conferindo os arquivos…")
 
         def baixar() -> None:
             try:
                 destino = raiz_execucoes_locais().parent / "atualizacoes" / atualizacao.versao
-                self.fila.put(("instalador_pronto", baixar_instalador(atualizacao, destino)))
+                preparada = preparar_incremental(atualizacao, pasta_do_aplicativo(), destino.parent)
+                self.fila.put(("atualizacao_preparada", preparada))
             except Exception as exc:
                 self.fila.put(("atualizacao_erro", f"Não foi possível baixar a atualização.\n\n{exc}"))
 
         threading.Thread(target=baixar, daemon=True).start()
 
-    def _executar_instalador(self, arquivo: Path) -> None:
+    def _reiniciar_atualizado(self, preparada) -> None:
         if self.em_execucao or any(resultado.ambiguos for resultado in self.resultados):
             self._encerrar_atualizacao()
-            messagebox.showinfo("Atualizações", "Conclua a revisão e consulte novamente para instalar a atualização.")
+            messagebox.showinfo("Atualizações", "Conclua a revisão e consulte novamente para aplicar a atualização.")
             return
         try:
-            subprocess.Popen([str(arquivo)], close_fds=True)
-        except OSError as exc:
+            iniciar_atualizacao(preparada)
+        except (OSError, ValueError) as exc:
             self._encerrar_atualizacao()
-            messagebox.showerror("Atualizações", f"Não foi possível abrir o instalador.\n\n{exc}")
+            messagebox.showerror("Atualizações", f"Não foi possível iniciar a atualização.\n\n{exc}")
             return
         self.destroy()
 
@@ -1601,6 +1610,8 @@ def analisar_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--nao-iniciar", action="store_true")
     parser.add_argument("--silencioso", action="store_true")
     parser.add_argument("--validar-interface", type=Path)
+    parser.add_argument("--confirmar-inicio", type=Path)
+    parser.add_argument("--token-inicio", default="")
     parser.add_argument("--versao", action="version", version=VERSION)
     return parser.parse_args(argv)
 
@@ -1628,6 +1639,8 @@ def main() -> None:
             ),
             encoding="utf-8",
         )
+        if funcional:
+            confirmar_inicio(args.confirmar_inicio, args.token_inicio, pasta_do_aplicativo(), VERSION)
         raise SystemExit(0 if funcional else 2)
     if args.silencioso or not interface_tk_funcional():
         raise SystemExit(executar_modo_nativo(args))
@@ -1638,6 +1651,13 @@ def main() -> None:
         gerar_pdf=not args.sem_pdf,
         auto_iniciar=bool(arquivos) and not args.nao_iniciar,
     )
+    app.update_idletasks()
+    app.after(150, lambda: confirmar_inicio(args.confirmar_inicio, args.token_inicio, pasta_do_aplicativo(), VERSION))
+    erro_atualizacao = pasta_do_aplicativo().parent.parent / "erro_atualizacao.txt"
+    if pasta_do_aplicativo().parent.name == "versoes" and erro_atualizacao.is_file():
+        erro = erro_atualizacao.read_text(encoding="utf-8")[:2000]
+        erro_atualizacao.unlink()
+        app.after(300, lambda: messagebox.showwarning("Atualizações", "A atualização não pôde ser concluída. A versão anterior foi mantida.\n\n" + erro))
     app.mainloop()
 
 

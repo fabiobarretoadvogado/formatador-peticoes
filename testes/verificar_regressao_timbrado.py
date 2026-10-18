@@ -115,9 +115,13 @@ def _run(exe: Path, input_path: Path, output_root: Path, local_app_data: Path) -
     return outputs[0]
 
 
-def _assert_word_preserved(before: dict[str, object], output: Path) -> dict[str, object]:
+def _assert_word_preserved(before: dict[str, object], output: Path, model: Path) -> dict[str, object]:
     after = _word_snapshot(output)
-    differing = {key: (before[key], after[key]) for key in before if before[key] != after[key]}
+    expected = dict(before)
+    reference = Document(model).sections[0]
+    for key in ("top_margin", "right_margin", "bottom_margin", "left_margin", "header_distance", "footer_distance"):
+        expected[key] = getattr(reference, key)
+    differing = {key: (expected[key], after[key]) for key in expected if expected[key] != after[key]}
     if differing:
         raise RuntimeError(f"A entrada Word teve elementos fora dos estilos alterados: {differing}")
 
@@ -243,7 +247,7 @@ def main() -> None:
     )
     if _sha256(word_input) != word_input_hash:
         raise RuntimeError("O arquivo Word de entrada foi sobrescrito.")
-    word_after = _assert_word_preserved(before, word_output)
+    word_after = _assert_word_preserved(before, word_output, args.modelo)
 
     markdown_output = _run(
         args.exe.resolve(),
@@ -262,7 +266,8 @@ def main() -> None:
         "model_sha256": _sha256(args.modelo),
         "run_root": str(run_root.resolve()),
         "word_input_unchanged": True,
-        "word_layout_header_footer_and_image_preserved": True,
+        "word_page_size_header_footer_and_image_preserved": True,
+        "word_margins_match_official_model": True,
         "word_snapshot": word_after,
         "markdown_intermediate": _assert_branded(intermediates[0]),
         "markdown_final": _assert_branded(markdown_output),

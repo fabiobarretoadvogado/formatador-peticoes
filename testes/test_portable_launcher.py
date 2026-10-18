@@ -5,7 +5,7 @@ from pathlib import Path
 
 from docx import Document
 
-from portable_launcher import (
+from aplicativo import (
     Aplicativo,
     carregar_dados_revisao,
     interface_tk_funcional,

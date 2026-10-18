@@ -275,7 +275,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIsNotNone(principal.element.pPr.find(qn("w:numPr")))
             self.assertIsNotNone(secundario.element.pPr.find(qn("w:numPr")))
             self.assertAlmostEqual(secundario.paragraph_format.left_indent.cm, 1, places=2)
-            self.assertAlmostEqual(secundario.paragraph_format.first_line_indent.cm, -0.5, places=2)
+            self.assertAlmostEqual(secundario.paragraph_format.first_line_indent.cm, 1, places=2)
 
     def test_catalogo_semantico_cobre_todos_os_estilos(self):
         config = carregar_json(Path(__file__).parents[1] / "modelos" / "estilos.json")
@@ -516,7 +516,8 @@ class PipelineTests(unittest.TestCase):
             ind_principal = nivel_principal.find(qn("w:pPr")).find(qn("w:ind"))
             ind_secundario = nivel_secundario.find(qn("w:pPr")).find(qn("w:ind"))
             self.assertEqual((ind_principal.get(qn("w:left")), ind_principal.get(qn("w:hanging"))), ("283", "283"))
-            self.assertEqual((ind_secundario.get(qn("w:left")), ind_secundario.get(qn("w:hanging"))), ("567", "567"))
+            self.assertEqual((ind_secundario.get(qn("w:left")), ind_secundario.get(qn("w:firstLine"))), ("567", "567"))
+            self.assertIsNone(ind_secundario.get(qn("w:hanging")))
 
     def test_solicitacao_semantica_inclui_catalogo(self):
         with tempfile.TemporaryDirectory() as d:

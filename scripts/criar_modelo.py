@@ -67,7 +67,7 @@ def criar_modelo(destino: Path | None = None) -> Path:
         "FB - Qualificação das Partes": (WD_ALIGN_PARAGRAPH.JUSTIFY, 0, 1.0, 12, 12, 12, False, False),
         "FB - Identificação da Ação": (WD_ALIGN_PARAGRAPH.CENTER, 0, 0, 12, 12, 12, True, False),
         "FB - Título Principal": (WD_ALIGN_PARAGRAPH.LEFT, 0.5, -0.5, 36, 12, 12, True, False),
-        "FB - Título Secundário": (WD_ALIGN_PARAGRAPH.LEFT, 1.0, -0.5, 36, 12, 12, True, False),
+        "FB - Título Secundário": (WD_ALIGN_PARAGRAPH.LEFT, 1.0, 1.0, 36, 12, 12, True, False),
         "FB - Corpo": (WD_ALIGN_PARAGRAPH.JUSTIFY, 0, 1.0, 12, 12, 12, False, False),
         "FB - Corpo com Recuo": (WD_ALIGN_PARAGRAPH.JUSTIFY, 1.25, 1.0, 12, 12, 12, False, False),
         "FB - Tabela": (WD_ALIGN_PARAGRAPH.LEFT, 0, 0, 0, 0, 12, False, False),
@@ -83,6 +83,10 @@ def criar_modelo(destino: Path | None = None) -> Path:
     for nome, (alinhamento, esquerdo, primeira, antes, depois, tamanho, negrito, italico) in specs.items():
         style = doc.styles.add_style(nome, WD_STYLE_TYPE.PARAGRAPH)
         _fonte(style, tamanho=tamanho, negrito=negrito, italico=italico)
+        if nome in {"FB - Endereçamento", "FB - Identificação do Processo"}:
+            style.font.cs_bold = True
+            style.font.all_caps = True
+            style.font.small_caps = False
         pf = style.paragraph_format
         pf.alignment = alinhamento
         pf.left_indent = Cm(esquerdo)

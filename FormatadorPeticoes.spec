@@ -47,7 +47,7 @@ def _icon_is_readable(path: Path) -> bool:
 
 
 a = Analysis(
-    [str(ROOT / "portable_launcher.py")],
+    [str(ROOT / "aplicativo.py")],
     pathex=[str(ROOT)],
     binaries=TK_BINARIES,
     datas=[
@@ -73,7 +73,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="FormatadorPeticoes",
+    name="FormatadorPeticoesApp",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

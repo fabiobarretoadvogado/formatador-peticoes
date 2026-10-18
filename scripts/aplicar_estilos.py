@@ -29,6 +29,7 @@ except ImportError:
 
 PPR_LIMPAR = {"jc", "ind", "spacing", "contextualSpacing", "mirrorIndents", "adjustRightInd", "snapToGrid", "keepLines", "keepNext", "widowControl", "pBdr"}
 RPR_LIMPAR = {"rFonts", "sz", "szCs", "color", "spacing", "position", "kern", "caps", "smallCaps", "outline", "shadow", "emboss", "imprint", "fitText", "w", "snapToGrid"}
+ESTILOS_CABECALHO = {"FB - Endereçamento", "FB - Identificação do Processo"}
 
 RE_NOME_ENTIDADE_CAIXA_ALTA = re.compile(
     r"\b(?:[A-ZÁÀÂÃÉÊÍÓÔÕÚÇÜ]{2,}|DA|DAS|DE|DO|DOS|E|EM|NA|NO|A|O)"
@@ -81,12 +82,34 @@ def _normalizar_titulo_literal(paragrafo) -> bool:
     return True
 
 
-def _forcar_negrito_titulo(paragrafo) -> None:
+def _forcar_formatacao_estrutural(paragrafo) -> None:
     """Evita que um `bold=false` direto da origem anule o estilo em negrito."""
-    if paragrafo.style.name not in ESTILOS_TITULO:
+    cabecalho = paragrafo.style.name in ESTILOS_CABECALHO
+    if paragrafo.style.name not in ESTILOS_TITULO and not cabecalho:
         return
-    for run in paragrafo.runs:
-        _definir_negrito(run._r, True)
+    for run in paragrafo._p.xpath(".//w:r"):
+        _definir_negrito(run, True)
+    ppr = paragrafo._p.get_or_add_pPr()
+    if ppr.find(qn("w:rPr")) is None:
+        marca = OxmlElement("w:rPr")
+        sucessor = next((el for el in ppr if el.tag in {qn("w:sectPr"), qn("w:pPrChange")}), None)
+        if sucessor is None:
+            ppr.append(marca)
+        else:
+            sucessor.addprevious(marca)
+    _definir_negrito(ppr, True)
+    if cabecalho:
+        # Efeito visual nativo do Word: preserva texto, campos e identificadores.
+        for elemento in [ppr, *paragrafo._p.xpath(".//w:r")]:
+            rpr = elemento.find(qn("w:rPr"))
+            for nome in ("caps", "smallCaps"):
+                for anterior in list(rpr.findall(qn(f"w:{nome}"))):
+                    rpr.remove(anterior)
+                flag = OxmlElement(f"w:{nome}")
+                flag.set(qn("w:val"), "1" if nome == "caps" else "0")
+                rpr.append(flag)
+    if paragrafo.style.name == "FB - Título Secundário":
+        paragrafo.paragraph_format.first_line_indent = Cm(1)
 
 
 def _romano(numero: int) -> str:
@@ -288,6 +311,7 @@ def _definir_negrito(run_xml, valor: bool) -> None:
         rpr.remove(negrito)
     if valor:
         rpr.append(OxmlElement("w:b"))
+        rpr.append(OxmlElement("w:bCs"))
     if len(rpr) == 0:
         run_xml.remove(rpr)
 
@@ -501,6 +525,33 @@ def _parte_tem_conteudo(parte) -> bool:
     )
 
 
+def _aplicar_margens_modelo(doc, modelo) -> list[dict]:
+    """Copia pgMar do modelo sem substituir seções, orientação ou paginação."""
+    referencia = modelo.sections[0]._sectPr.pgMar
+    if referencia is None:
+        raise ValueError("O modelo oficial não contém as margens da página.")
+    medidas = {
+        "superior": "top_margin", "inferior": "bottom_margin",
+        "esquerda": "left_margin", "direita": "right_margin", "medianiz": "gutter",
+        "cabecalho": "header_distance", "rodape": "footer_distance",
+    }
+
+    def valores(secao):
+        return {nome: round(valor.cm, 3) if valor is not None else None
+                for nome, propriedade in medidas.items()
+                for valor in [getattr(secao, propriedade)]}
+
+    alteracoes = []
+    for indice, secao in enumerate(doc.sections, 1):
+        anterior = valores(secao)
+        existente = secao._sectPr.get_or_add_pgMar()
+        secao._sectPr.replace(existente, copy.deepcopy(referencia))
+        depois = valores(secao)
+        if anterior != depois:
+            alteracoes.append({"secao": indice, "antes_cm": anterior, "depois_cm": depois})
+    return alteracoes
+
+
 def _copiar_parte_timbrada(origem, destino) -> None:
     """Copia o XML e remapeia as imagens para o pacote de destino."""
     novos_ids = {}
@@ -557,6 +608,10 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
         estagiado = Path(tmp) / "com_estilos.docx"
         _importar_estilos(modelo, entrada, estagiado)
         doc = Document(estagiado)
+        for nome in ESTILOS_CABECALHO:
+            fonte = doc.styles[nome].font
+            fonte.bold = fonte.cs_bold = fonte.all_caps = True
+            fonte.small_caps = False
         num_id_titulos = criar_lista_multinivel_titulos(doc, vincular_estilos=True)
         contagem, alertas, limpezas, imagens_assinatura_centralizadas, negritos_corpo_removidos = {}, [], 0, 0, 0
         imagens_gerais_centralizadas = 0
@@ -591,7 +646,7 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
                 negritos_corpo_removidos += _remover_negrito_direto(p)
             _aplicar_numpr(p, numpr)
             titulos_literais_ajustados += int(_normalizar_titulo_literal(p))
-            _forcar_negrito_titulo(p)
+            _forcar_formatacao_estrutural(p)
             contagem[estilo] = contagem.get(estilo, 0) + 1
         tabelas_markdown_convertidas = _converter_tabelas_markdown(doc)
         assinaturas_em_tabela = vazios_antes_assinatura_removidos = 0
@@ -608,7 +663,9 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
                 contagem[estilo_tabela] = contagem.get(estilo_tabela, 0) + 1
         # Completa o timbre do modelo onde a entrada Word não o possui.
         # Conteúdo já presente, inclusive paginação, permanece preservado.
-        papel_timbrado = _completar_papel_timbrado(doc, Document(modelo))
+        documento_modelo = Document(modelo)
+        margens_modelo = _aplicar_margens_modelo(doc, documento_modelo)
+        papel_timbrado = _completar_papel_timbrado(doc, documento_modelo)
         negritos_qualificacao = 0
         for p in doc.paragraphs:
             if p.style.name == "FB - Qualificação das Partes":
@@ -620,7 +677,9 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
     return {
         "arquivo": str(saida),
         "papel_timbrado": papel_timbrado,
+        "margens_modelo": margens_modelo,
         "contagem_estilos": contagem,
+        "cabecalhos_negrito_caixa_alta": sum(contagem.get(nome, 0) for nome in ESTILOS_CABECALHO),
         "formatacoes_diretas_removidas": limpezas,
         "negritos_qualificacao_ajustados": negritos_qualificacao,
         "imagens_assinatura_centralizadas": imagens_assinatura_centralizadas,

@@ -15,18 +15,34 @@ resultados e arquivos temporários não fazem parte da distribuição.
 
 ## Atualizações pelo GitHub
 
-No aplicativo, clique em **Verificar atualizações**. Quando houver uma versão mais
-recente, o programa oferece o download, confere o tamanho e o SHA-256 informado
-pelo GitHub e abre o instalador. A instalação mantém a mesma identidade no Windows
-e preserva os documentos e as execuções armazenadas fora da pasta do programa.
-O computador precisa de acesso à internet e a release deve estar pública.
+No aplicativo, clique em **Verificar atualizações** e confirme **Atualizar e reiniciar**.
+O programa baixa os pacotes que contêm os arquivos alterados, confere tamanho e
+SHA-256 publicados pelo GitHub e prepara a nova versão em uma pasta separada.
+Bibliotecas que continuam iguais são reaproveitadas da instalação atual, sem
+novo download. O programa fecha e reabre automaticamente, sem assistente de instalação.
+
+A versão ativa só muda depois de o aplicativo novo confirmar que abriu a interface.
+Se o download, a verificação ou a abertura falhar, a versão anterior permanece
+disponível. Interrupções durante a troca são recuperadas na próxima abertura.
+Documentos, resultados e execuções ficam fora das pastas de versões do programa.
+A instalação inicial e a versão anterior são mantidas para recuperação; versões
+intermediárias antigas são removidas somente se contiverem apenas arquivos conhecidos do programa.
+
+A migração das versões até 1.0.3 exige uma última instalação completa. A partir
+da 1.0.4, as atualizações normais são feitas pelo próprio programa. O computador
+precisa de acesso à internet e as releases e seus pacotes devem permanecer públicos.
 
 Para publicar uma alteração:
 
 1. Altere o código e incremente a versão em `app_version.py` e `pyproject.toml`.
 2. Envie as alterações para `main`.
-3. O GitHub Actions executa os testes, compila e verifica a interface e o
-   processamento DOCX/Markdown e publica o instalador e o ZIP em uma nova release.
+3. O GitHub Actions executa os testes, compila e verifica a interface, o
+   processamento DOCX/Markdown e a ativação de uma versão. Publica o instalador,
+   o ZIP portátil, o manifesto e o pacote incremental em uma nova release.
+
+O manifesto associa cada arquivo ao pacote da release em que ele foi alterado.
+Isso permite atualizar diretamente de versões antigas sem aplicar todas as
+versões intermediárias. Os pacotes antigos referenciados não devem ser apagados.
 
 Uma alteração com a mesma versão executa os testes, mas não substitui uma release
 existente. Falhas de testes ou compilação interrompem a publicação. Pull requests
@@ -105,7 +121,7 @@ Na versão portátil:
 - o DOCX, o PDF, o relatório, a auditoria e eventuais pendências são copiados
   para a pasta de resultados; entradas Markdown incluem ainda o manifesto e o
   DOCX intermediário utilizados;
-- o modelo e as regras ficam na pasta `modelos`, ao lado do programa;
+- o modelo e as regras ficam em `versoes/<versão>/modelos`, junto da versão correspondente;
 - o Word continua sendo necessário somente para a geração do PDF.
 
 Na tela de revisão, a sugestão automática, a confiança e a descrição da função
@@ -203,7 +219,14 @@ Nos estilos regulares (`FB - Corpo`, `FB - Corpo com Recuo`, `FB - Citação`, `
 
 Tópicos e subtópicos recebem 36 pt de espaço anterior: os 12 pt normais mais 24 pt equivalentes a uma linha de parágrafo separando-os do bloco anterior. A identificação da ação permanece com 12 pt antes e 12 pt depois.
 
+O endereçamento e a identificação do processo ficam sempre em negrito e caixa alta, inclusive quando a origem contém trechos em minúsculas ou com negrito desativado. A caixa alta usa o efeito nativo do Word, preservando o texto e os campos originais.
+
 Os títulos usam uma única lista multinível nativa do Word: `FB - Título Principal` gera `1`, `2`, `3`; `FB - Título Secundário` gera `1.1`, `1.2`, `2.1`. Número e texto ficam em 12 pt e em negrito. Prefixos digitados, como `2.` ou `II.`, são retirados ao vincular o título à lista, evitando combinações duplicadas como `II. 2.`.
+
+Os subtítulos mantêm recuo esquerdo de 1 cm e especial **Primeira linha: 1 cm**.
+O estilo, o parágrafo e a numeração usam a mesma definição, sem deslocamento.
+Títulos e subtítulos ficam integralmente em negrito, inclusive números e trechos
+que tenham vindo com negrito desativado na origem.
 
 No bloco final de pedidos, a frase introdutória (por exemplo, “Diante do exposto, requer-se...”) usa `FB - Corpo`. Somente os itens numerados em algarismos romanos (`I`, `II`, `III`...) usam `FB - Pedido` e o recuo de 3 cm.
 
@@ -251,6 +274,7 @@ Somente estilos autorizados são aceitos. Respostas semânticas com confiança d
 - A paginação registrada na extração é aproximada até o Word repaginar o arquivo.
 - Em entradas DOCX, notas de rodapé, imagens, tabelas, campos e seções são preservados porque o original é editado por cópia; a classificação automática cobre parágrafos do corpo principal.
 - Cabeçalhos e rodapés vazios recebem o papel timbrado e a paginação do modelo oficial. Conteúdo já existente nessas partes é preservado. A regra também cobre a primeira página, páginas pares e seções vinculadas.
+- Todas as seções recebem as margens, medianiz e distâncias de cabeçalho/rodapé do modelo oficial. No modelo incluído: superior 3 cm, inferior 2,75 cm e laterais 2 cm. O tamanho da página, a orientação e as quebras de seção são preservados.
 - Em entradas Markdown, aplicam-se estritamente os recursos declarados no perfil acima; notas de rodapé, HTML e posicionamento flutuante não são inferidos.
 - O modelo incluído é um ponto de partida técnico. A fonte de verdade deve ser validada e, se necessário, substituída pelo modelo aprovado no Word.
 - O PDF requer Microsoft Word e `pywin32`. Falhas de exportação são registradas sem apagar o DOCX e o relatório.

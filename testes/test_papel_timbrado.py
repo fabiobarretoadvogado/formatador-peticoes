@@ -75,8 +75,9 @@ class PapelTimbradoTests(unittest.TestCase):
             resultado, relatorio, _ = self.processar(doc, Path(temp))
             self.assertEqual(resultado.sections[0].header.paragraphs[0].text, "Cabeçalho próprio")
             self.assertEqual(resultado.sections[0].footer.paragraphs[0].text, "Rodapé próprio")
-            self.assertEqual(resultado.sections[0].top_margin, secao.top_margin)
-            self.assertEqual(resultado.sections[0].header_distance, secao.header_distance)
+            referencia = Document(MODELO).sections[0]
+            self.assertEqual(resultado.sections[0].top_margin, referencia.top_margin)
+            self.assertEqual(resultado.sections[0].header_distance, referencia.header_distance)
             self.assertEqual(relatorio["papel_timbrado"], {"cabecalhos_adicionados": 0, "rodapes_adicionados": 0})
 
     def test_timbre_nao_colide_com_imagem_do_corpo(self):
