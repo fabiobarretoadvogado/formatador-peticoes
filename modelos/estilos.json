@@ -86,7 +86,8 @@
       "descricao": "Fórmula que identifica o juízo, tribunal ou autoridade a quem a peça é dirigida.",
       "aplicar_quando": ["O parágrafo é o destinatário formal da petição.", "O texto começa com fórmula como Excelentíssimo Senhor Juiz ou Ao Juízo."],
       "nao_aplicar_quando": ["O parágrafo apenas informa o número do processo.", "O texto identifica a ação, desenvolve argumentos ou apresenta pedidos."],
-      "exemplos": ["AO JUÍZO DA 26ª VARA CÍVEL DA COMARCA DE ARACAJU - SE"]
+      "exemplos": ["AO JUÍZO DA 26ª VARA CÍVEL DA COMARCA DE ARACAJU - SE",
+        "EGRÉGIO SUPERIOR TRIBUNAL DE JUSTIÇA"]
     },
     "FB - Identificação do Processo": {
       "descricao": "Linha curta que informa o número ou a identificação formal dos autos.",
@@ -116,7 +117,8 @@
       "descricao": "Título de primeiro nível que inicia uma seção principal da fundamentação ou dos pedidos.",
       "aplicar_quando": ["O título corresponde a Heading 1 ou Título 1 no documento de origem.", "O título organiza uma seção principal, como DOS FATOS ou DOS PEDIDOS."],
       "nao_aplicar_quando": ["O texto é o nome da ação ou do rito.", "O texto é uma subseção ou apenas uma frase em negrito dentro do corpo."],
-      "exemplos": ["1. DOS FATOS", "DA AVERBAÇÃO E DOS DÉBITOS", "DOS PEDIDOS"]
+      "exemplos": ["1. DOS FATOS",
+        "I. SÍNTESE DA CONTROVÉRSIA", "DA AVERBAÇÃO E DOS DÉBITOS", "DOS PEDIDOS"]
     },
     "FB - Título Secundário": {
       "descricao": "Título de segundo nível que organiza uma subseção dentro de uma seção principal.",

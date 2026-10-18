@@ -10,6 +10,15 @@ except ImportError:
     from comum import ROOT, TIPO_PECA_SUPORTADO, carregar_json, salvar_json
 
 RE_ENDERECAMENTO = re.compile(r"^\s*(excelent[ií]ssim[oa]|merit[ií]ssim[oa]|ao\s+ju[ií]zo|[àa]o\s+excelent[ií]ssim)", re.I)
+RE_VOCATIVO_ORGAO = re.compile(
+    r"^(?:(?:ao|[àa])\s+)?(?:egr[eé]gi[oa]|colend[oa]|em[eé]rit[oa])\s+(?P<orgao>.+?)\s*[.:!]?\s*$",
+    re.I,
+)
+RE_ORGAO_JUDICIAL = re.compile(r"\b(?:tribunal|turma|c[aâ]mara|ju[ií]zo)\b", re.I)
+RE_ORGAO_EM_NARRATIVA = re.compile(
+    r"\b(?:decidiu|decide|entendeu|entende|reconheceu|reconhece|assentou|firmou|julgou|"
+    r"julga|determinou|determina|compete|conforme|segundo|ac[oó]rd[aã]o)\b", re.I,
+)
 RE_PROCESSO = re.compile(
     r"\b(?:processo|autos|proc\.?)\s*(?:n\s*(?:\.\s*)?[º°o]?\s*)?(?:[:.-]?\s*)\d",
     re.I,
@@ -47,12 +56,63 @@ RE_MARKDOWN_TITULO_SECUNDARIO = re.compile(r"^\s*###\s+")
 RE_MARKDOWN_TITULO_TERCIARIO = re.compile(r"^\s*####\s+")
 RE_MARKDOWN_CITACAO = re.compile(r"^\s*>\s?")
 RE_MARKDOWN_TABELA = re.compile(r"^\s*\|.*\|\s*$")
-RE_BLOCO_PEDIDOS = re.compile(r"^\s*(?:##\s+)?(?:\d+[.)]\s*)?(?:dos\s+)?pedidos\b", re.I)
+RE_BLOCO_PEDIDOS = re.compile(
+    r"^\s*(?:##\s+)?(?:(?:\d+(?:\.\d+)*|[ivxlcdm]+)(?:[.)]\s+|\s*[-–—:]\s+))?(?:dos\s+)?pedidos\b", re.I,
+)
+RE_TITULO_ENUMERADO = re.compile(
+    r"^(?P<numero>\d{1,3}(?:\.\d{1,3})*|[IVXLCDM]+)(?:[.)]?\s*[-–—:]\s+|[.)]?\s+)(?P<titulo>\S.*)$", re.I,
+)
+RE_ROMANO_VALIDO = re.compile(r"M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})", re.I)
+RE_NOME_SECAO = re.compile(
+    r"^(?:(?:da|do|das|dos)\s+)?(?:breve\s+)?(?:s[ií]ntese|fatos?|direito|fundamentos?|"
+    r"pedidos?|requerimentos?|provas?|documentos?|preliminares?|m[eé]rito|conclus[aã]o|"
+    r"tutela|responsabilidade|compet[eê]ncia|gratuidade|justi[cç]a\s+gratuita|"
+    r"valor\s+da\s+causa|requisitos?)\b", re.I,
+)
+RE_TITULO_EM_NARRATIVA = re.compile(
+    r"\b(?:requer(?:-se)?|seja|sejam|consta|constam|conclui|resulta|dever[aá]|"
+    r"dever[aã]o|foi|foram|comprova|comprovam|determina|pede|decidiu)\b", re.I,
+)
+RE_VERBO_PROSA = re.compile(
+    r"\b(?:é|s[aã]o|foi|foram|h[aá]|houve|possui|possuem|re[uú]ne|re[uú]nem|"
+    r"demonstra|demonstram|evidencia|evidenciam|comprova|comprovam|revela|revelam|"
+    r"configura|configuram|constitui|constituem|apresenta|apresentam|permanece|permanecem|"
+    r"decorre|decorrem|sustenta|sustentam|alega|alegam|afirma|afirmam|informa|informam|"
+    r"preenche|preenchem|verifica-se|observa-se|trata-se)\b", re.I,
+)
+RE_ROTULO_INFORMATIVO = re.compile(r"^(?:descri[cç][aã]o|fonte|nota)\s*:", re.I)
 
 
 def _caixa_alta(texto: str) -> bool:
     letras = [c for c in texto if c.isalpha()]
     return bool(letras) and sum(c.isupper() for c in letras) / len(letras) >= 0.9
+
+
+def parece_vocativo_orgao(texto: str) -> bool:
+    encontrado = RE_VOCATIVO_ORGAO.fullmatch(texto)
+    if not encontrado:
+        return False
+    orgao = encontrado["orgao"].rstrip(".:! ")
+    return bool(
+        len(orgao.split()) <= 24
+        and RE_ORGAO_JUDICIAL.search(orgao)
+        and not re.search(r"[,;:!?]", orgao)
+        and not RE_ORGAO_EM_NARRATIVA.search(orgao)
+    )
+
+
+def nivel_titulo_enumerado(texto: str) -> int | None:
+    """Separa rótulos de seção enumerados de itens narrativos e pedidos."""
+    encontrado = RE_TITULO_ENUMERADO.fullmatch(texto)
+    if not encontrado:
+        return None
+    numero, titulo = encontrado["numero"], encontrado["titulo"]
+    if numero[0].isalpha() and not RE_ROMANO_VALIDO.fullmatch(numero):
+        return None
+    if (len(titulo.split()) > 16 or re.search(r"[,;.!?]", titulo)
+            or not RE_NOME_SECAO.search(titulo) or RE_TITULO_EM_NARRATIVA.search(titulo)):
+        return None
+    return 2 if "." in numero else 1
 
 
 def parece_qualificacao(texto: str) -> bool:
@@ -61,6 +121,15 @@ def parece_qualificacao(texto: str) -> bool:
         RE_QUALIFICACAO.search(texto)
         or (RE_DOCUMENTO_PARTE.search(texto) and RE_DADOS_PARTE.search(texto))
     )
+
+
+def parece_prosa_discursiva(texto: str) -> bool:
+    """Usa sinais de frase completa, em vez de depender só do tamanho."""
+    if (len(texto.split()) < 10 or not texto.endswith((".", "!", "?"))
+            or RE_ROTULO_INFORMATIVO.search(texto) or not RE_VERBO_PROSA.search(texto)):
+        return False
+    letras = [caractere for caractere in texto if caractere.isalpha()]
+    return bool(letras) and sum(caractere.islower() for caractere in letras) / len(letras) >= 0.70
 
 
 def parece_fechamento_local_data(p: dict, texto: str, anterior: str = "", seguinte: str = "") -> bool:
@@ -126,7 +195,9 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         estilo, conf, motivo = "FB - Tabela", 0.99, "Linha de tabela estrutural marcada no texto"
     elif RE_RESUMO.search(texto) or (p.get("posicao_relativa", 1) < 0.10 and RE_RESUMO.search(anterior)):
         estilo, conf, motivo = "FB - Resumo", 0.98, "Resumo inicial identificado por rótulo ou sequência do bloco"
-    elif RE_ENDERECAMENTO.search(texto):
+    elif RE_ENDERECAMENTO.search(texto) or (
+        parece_vocativo_orgao(texto) and estilo_original not in {"quote", "citação", "citacao"}
+    ):
         estilo, conf, motivo = "FB - Endereçamento", 0.99, "Fórmula de endereçamento judicial"
     elif RE_PROCESSO.search(texto) and len(palavras) <= 16:
         estilo, conf, motivo = "FB - Identificação do Processo", 0.99, "Identificação curta de processo/autos"
@@ -140,6 +211,9 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         estilo, conf, motivo = "FB - Título Principal", 0.99, "Título principal identificado pelo estilo estrutural original"
     elif estilo_original in {"heading 2", "título 2", "titulo 2"}:
         estilo, conf, motivo = "FB - Título Secundário", 0.99, "Título secundário identificado pelo estilo estrutural original"
+    elif (nivel := nivel_titulo_enumerado(texto)) and estilo_original not in {"quote", "citação", "citacao"}:
+        estilo = "FB - Título Principal" if nivel == 1 else "FB - Título Secundário"
+        conf, motivo = 0.98, "Rótulo de seção com numeração explícita; não é item de lista"
     elif (_caixa_alta(texto) or p.get("negrito")) and RE_ACAO.search(texto) and len(palavras) <= 18:
         estilo, conf, motivo = "FB - Identificação da Ação", 0.94, "Denominação curta da ação em destaque"
     elif estilo_original in {"quote", "citação", "citacao"}:
@@ -160,6 +234,8 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         conf, motivo = 0.75, "Bloco curto em negrito, sem evidência estrutural conclusiva"
     elif (p.get("recuo_esquerdo_cm") or 0) >= 3.0 or (texto.startswith(('"', '“')) and texto.endswith(('"', '”'))):
         estilo, conf, motivo = "FB - Citação", 0.91, "Recuo elevado ou aspas delimitadoras"
+    elif parece_prosa_discursiva(texto):
+        estilo, conf, motivo = "FB - Corpo", 0.96, "Prosa discursiva com oração verbal e pontuação de encerramento"
     elif len(texto) > 180:
         estilo, conf, motivo = "FB - Corpo", 0.96, "Parágrafo argumentativo longo"
     elif len(palavras) >= 12:
@@ -211,7 +287,9 @@ def classificar(estrutura: dict) -> dict:
                 "motivo": "Parágrafo integrante do bloco de resumo inicial",
                 "necessita_analise_semantica": False,
             })
-        if em_pedidos and texto and (p.get("possui_numeracao") or RE_LISTA_NUMERADA.search(texto)):
+        if em_pedidos and texto and not RE_BLOCO_PEDIDOS.search(texto) and (
+            p.get("possui_numeracao") or RE_LISTA_NUMERADA.search(texto)
+        ):
             item.update({
                 "categoria_provavel": "FB - Pedido",
                 "estilo_destino": "FB - Pedido",
