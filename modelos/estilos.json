@@ -93,7 +93,7 @@
       "descricao": "Linha curta que informa o número ou a identificação formal dos autos.",
       "aplicar_quando": ["O parágrafo contém o número do processo, autos ou referência processual no bloco inicial."],
       "nao_aplicar_quando": ["A palavra processo aparece no meio de uma argumentação.", "O parágrafo é o endereçamento ou o título da demanda."],
-      "exemplos": ["PROCESSO Nº 0001234-56.2025.8.26.0001"]
+      "exemplos": ["PROCESSO Nº 0001234-56.2025.8.26.0001", "Número único: 0001234-56.2025.8.26.0001"]
     },
     "FB - Resumo": {
       "descricao": "Ementa, síntese ou resumo inicial da petição.",
@@ -108,10 +108,10 @@
       "exemplos": ["Maria, já qualificada nos autos, vem respeitosamente à presença de Vossa Excelência."]
     },
     "FB - Identificação da Ação": {
-      "descricao": "Denominação centralizada da ação, do rito ou do procedimento.",
+      "descricao": "Denominação centralizada da ação, da peça, do rito ou do procedimento.",
       "aplicar_quando": ["O parágrafo nomeia a demanda ou o rito em bloco inicial destacado.", "O texto é curto, identificador e não desenvolve argumentação."],
       "nao_aplicar_quando": ["O texto é um título de seção argumentativa.", "O parágrafo contém apenas o número do processo."],
-      "exemplos": ["AÇÃO DE CUMPRIMENTO DE SENTENÇA", "RITO: ARROLAMENTO COMUM"]
+      "exemplos": ["AÇÃO DE CUMPRIMENTO DE SENTENÇA", "RITO: ARROLAMENTO COMUM", "CONTRARRAZÕES AO RECURSO ESPECIAL"]
     },
     "FB - Título Principal": {
       "descricao": "Título de primeiro nível que inicia uma seção principal da fundamentação ou dos pedidos.",
@@ -124,7 +124,8 @@
       "descricao": "Título de segundo nível que organiza uma subseção dentro de uma seção principal.",
       "aplicar_quando": ["O título corresponde a Heading 2 ou Título 2 no documento de origem.", "O título desenvolve uma subdivisão, como 3.1. Da prova documental."],
       "nao_aplicar_quando": ["O texto é uma seção principal.", "O negrito serve apenas para destacar uma expressão no corpo."],
-      "exemplos": ["3.1. Da prova documental", "DA RESPONSABILIDADE DO RÉU"]
+      "exemplos": ["3.1. Da prova documental",
+        "III.2. Pedidos de pesquisa patrimonial. Inexistência de direito automático à suspensão", "DA RESPONSABILIDADE DO RÉU"]
     },
     "FB - Corpo": {
       "descricao": "Parágrafo jurídico corrido usado para fatos, fundamentos, transições e introduções de pedidos.",

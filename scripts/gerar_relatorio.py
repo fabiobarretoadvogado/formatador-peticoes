@@ -12,6 +12,7 @@ def gerar_relatorio(
     metadados_entrada: dict | None = None,
 ) -> Path:
     aplicacao = auditoria.get("aplicacao", {})
+    papel_timbrado = aplicacao.get("papel_timbrado", {})
     metadados_entrada = metadados_entrada or {}
     formato = metadados_entrada.get("formato_original", "docx")
     rotulo_formato = "Markdown (.md)" if formato == "markdown" else "Word (.docx)"
@@ -38,6 +39,8 @@ def gerar_relatorio(
         linhas.append(f"- {total} parágrafo(s) classificados como **{estilo}**.")
     linhas.extend([
         f"- {aplicacao.get('formatacoes_diretas_removidas', 0)} propriedade(s) de formatação direta incompatível removida(s).",
+        f"- {papel_timbrado.get('cabecalhos_adicionados', 0)} cabeçalho(s) vazio(s) receberam o papel timbrado do modelo oficial.",
+        f"- {papel_timbrado.get('rodapes_adicionados', 0)} rodapé(s) vazio(s) receberam a paginação do modelo oficial; conteúdo existente foi preservado.",
         f"- {aplicacao.get('negritos_qualificacao_ajustados', 0)} parágrafo(s) de qualificação tiveram o negrito restringido a nomes, entidades, ações e fases processuais.",
         f"- {aplicacao.get('imagens_assinatura_centralizadas', 0)} imagem(ns) isolada(s) de assinatura foram centralizadas.",
         f"- {aplicacao.get('imagens_gerais_centralizadas', 0)} imagem(ns) geral(is) em bloco foram centralizadas.",

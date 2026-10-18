@@ -14,6 +14,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.shared import Cm, Pt
 from docx.text.run import Run
 from lxml import etree
@@ -45,7 +46,7 @@ RE_MARKDOWN_ESTRUTURAL = re.compile(r"^\s*(?:####|###|##|>)\s?")
 RE_MARKDOWN_TABELA = re.compile(r"^\s*\|.*\|\s*$")
 RE_SEPARADOR_TABELA = re.compile(r"^:?-{3,}:?$")
 RE_TITULO_NUMERADO_LITERAL = re.compile(
-    r"^\s*(?:(?:\d+(?:\.\d+)*|[IVXLCDM]+)[.)]?)(?:\s*[-–—:]\s*|\s+)(\S.*)$",
+    r"^\s*(?:(?:(?:\d+|[IVXLCDM]+)(?:\.\d+)*)[.)]?)(?:\s*[-–—:]\s*|\s+)(\S.*)$",
     re.IGNORECASE,
 )
 RE_PEDIDO_NUMERADO_LITERAL = re.compile(r"^\s*(\d+)[.)]\s+(.+)$")
@@ -492,6 +493,61 @@ def _estabilizar_papel_timbrado(caminho: Path) -> None:
             temporario.unlink()
 
 
+def _parte_tem_conteudo(parte) -> bool:
+    elemento = parte._element
+    return bool(
+        any(texto.strip() for texto in elemento.xpath(".//w:t/text()"))
+        or elemento.xpath(".//w:drawing | .//w:pict | .//w:object | .//w:tbl | .//w:fldChar | .//w:fldSimple | .//w:instrText | .//w:altChunk")
+    )
+
+
+def _copiar_parte_timbrada(origem, destino) -> None:
+    """Copia o XML e remapeia as imagens para o pacote de destino."""
+    novos_ids = {}
+    for rel in origem.part.rels.values():
+        if rel.is_external:
+            novos_ids[rel.rId] = destino.part.relate_to(rel.target_ref, rel.reltype, is_external=True)
+        elif rel.reltype == RT.IMAGE:
+            novos_ids[rel.rId], _ = destino.part.get_or_add_image(io.BytesIO(rel.target_part.blob))
+        else:
+            raise ValueError(f"Relação não suportada no papel timbrado do modelo: {rel.reltype}")
+    elementos = [copy.deepcopy(el) for el in origem._element]
+    namespace_rel = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    for elemento in elementos:
+        for no in elemento.iter():
+            for atributo, valor in list(no.attrib.items()):
+                if atributo.startswith(namespace_rel) and valor in novos_ids:
+                    no.set(atributo, novos_ids[valor])
+    destino._element[:] = elementos
+
+
+def _completar_papel_timbrado(doc, modelo) -> dict:
+    """Completa partes vazias, mantendo o conteúdo já presente no Word."""
+    contagem = {"cabecalhos_adicionados": 0, "rodapes_adicionados": 0}
+    referencia = modelo.sections[0]
+    for secao in doc.sections:
+        tipos = ["default"]
+        if secao.different_first_page_header_footer:
+            tipos.append("first_page")
+        if doc.settings.odd_and_even_pages_header_footer:
+            tipos.append("even_page")
+        for tipo in tipos:
+            for nome, chave in (("header", "cabecalhos_adicionados"), ("footer", "rodapes_adicionados")):
+                atributo = nome if tipo == "default" else f"{tipo}_{nome}"
+                origem = getattr(referencia, atributo)
+                if not _parte_tem_conteudo(origem):
+                    origem = getattr(referencia, nome)
+                if not _parte_tem_conteudo(origem):
+                    continue
+                destino = getattr(secao, atributo)
+                if _parte_tem_conteudo(destino):
+                    continue
+                destino.is_linked_to_previous = False
+                _copiar_parte_timbrada(origem, destino)
+                contagem[chave] += 1
+    return contagem
+
+
 def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict, saida: Path) -> dict:
     permitidos = set(configuracao["estilos_permitidos"])
     padrao = configuracao["estilo_padrao"]
@@ -550,8 +606,9 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
                 if assinatura:
                     assinaturas_em_tabela += 1
                 contagem[estilo_tabela] = contagem.get(estilo_tabela, 0) + 1
-        # Cabeçalhos e rodapés não são sobrepostos: podem conter papel
-        # timbrado, campos de paginação e objetos flutuantes posicionados.
+        # Completa o timbre do modelo onde a entrada Word não o possui.
+        # Conteúdo já presente, inclusive paginação, permanece preservado.
+        papel_timbrado = _completar_papel_timbrado(doc, Document(modelo))
         negritos_qualificacao = 0
         for p in doc.paragraphs:
             if p.style.name == "FB - Qualificação das Partes":
@@ -562,6 +619,7 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
         _estabilizar_papel_timbrado(saida)
     return {
         "arquivo": str(saida),
+        "papel_timbrado": papel_timbrado,
         "contagem_estilos": contagem,
         "formatacoes_diretas_removidas": limpezas,
         "negritos_qualificacao_ajustados": negritos_qualificacao,

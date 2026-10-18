@@ -250,6 +250,7 @@ Somente estilos autorizados são aceitos. Respostas semânticas com confiança d
 
 - A paginação registrada na extração é aproximada até o Word repaginar o arquivo.
 - Em entradas DOCX, notas de rodapé, imagens, tabelas, campos e seções são preservados porque o original é editado por cópia; a classificação automática cobre parágrafos do corpo principal.
+- Cabeçalhos e rodapés vazios recebem o papel timbrado e a paginação do modelo oficial. Conteúdo já existente nessas partes é preservado. A regra também cobre a primeira página, páginas pares e seções vinculadas.
 - Em entradas Markdown, aplicam-se estritamente os recursos declarados no perfil acima; notas de rodapé, HTML e posicionamento flutuante não são inferidos.
 - O modelo incluído é um ponto de partida técnico. A fonte de verdade deve ser validada e, se necessário, substituída pelo modelo aprovado no Word.
 - O PDF requer Microsoft Word e `pywin32`. Falhas de exportação são registradas sem apagar o DOCX e o relatório.

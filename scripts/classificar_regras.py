@@ -23,6 +23,10 @@ RE_PROCESSO = re.compile(
     r"\b(?:processo|autos|proc\.?)\s*(?:n\s*(?:\.\s*)?[º°o]?\s*)?(?:[:.-]?\s*)\d",
     re.I,
 )
+RE_NUMERO_UNICO = re.compile(
+    r"^n[uú]mero\s+[uú]nico\s*:\s*[0-9]{7}-[0-9]{2}\.[0-9]{4}\.[0-9]\.[0-9]{2}\.[0-9]{4}$",
+    re.I,
+)
 RE_PEDIDO = re.compile(r"^\s*(ante\s+o\s+exposto|diante\s+do\s+exposto|requer(?:-se)?|pede\s+deferimento|dos\s+pedidos)\b", re.I)
 RE_FECHAMENTO = re.compile(r"\b(termos em que|pede deferimento|nestes termos)\b", re.I)
 RE_DATA = re.compile(r"\b\d{1,2}\s+de\s+[a-zç]+\s+de\s+\d{4}\b", re.I)
@@ -51,6 +55,9 @@ RE_DADOS_PARTE = re.compile(
     re.I,
 )
 RE_ACAO = re.compile(r"\b(ação|mandado\s+de\s+segurança|cumprimento\s+de\s+sentença|execução|procedimento)\b", re.I)
+RE_DENOMINACAO_PECA = re.compile(
+    r"contrarraz[oõ]es\s+ao\s+recurso\s+(?:especial|extraordin[aá]rio)", re.I,
+)
 RE_MARKDOWN_TITULO_PRINCIPAL = re.compile(r"^\s*##(?!#)\s+")
 RE_MARKDOWN_TITULO_SECUNDARIO = re.compile(r"^\s*###\s+")
 RE_MARKDOWN_TITULO_TERCIARIO = re.compile(r"^\s*####\s+")
@@ -60,7 +67,7 @@ RE_BLOCO_PEDIDOS = re.compile(
     r"^\s*(?:##\s+)?(?:(?:\d+(?:\.\d+)*|[ivxlcdm]+)(?:[.)]\s+|\s*[-–—:]\s+))?(?:dos\s+)?pedidos\b", re.I,
 )
 RE_TITULO_ENUMERADO = re.compile(
-    r"^(?P<numero>\d{1,3}(?:\.\d{1,3})*|[IVXLCDM]+)(?:[.)]?\s*[-–—:]\s+|[.)]?\s+)(?P<titulo>\S.*)$", re.I,
+    r"^(?P<numero>(?:\d{1,3}|[IVXLCDM]+)(?:\.\d{1,3})*)(?:[.)]?\s*[-–—:]\s+|[.)]?\s+)(?P<titulo>\S.*)$", re.I,
 )
 RE_ROMANO_VALIDO = re.compile(r"M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})", re.I)
 RE_NOME_SECAO = re.compile(
@@ -107,12 +114,20 @@ def nivel_titulo_enumerado(texto: str) -> int | None:
     if not encontrado:
         return None
     numero, titulo = encontrado["numero"], encontrado["titulo"]
-    if numero[0].isalpha() and not RE_ROMANO_VALIDO.fullmatch(numero):
+    raiz = numero.split(".", 1)[0]
+    if raiz[0].isalpha() and not RE_ROMANO_VALIDO.fullmatch(raiz):
+        return None
+    if "." in numero:
+        # A hierarquia explícita admite subtítulos longos e com mais de uma
+        # frase. Itens corridos com pontuação de encerramento continuam na
+        # classificação conservadora; estilos Heading 1/2 prevalecem antes.
+        if titulo[0].isupper() and not titulo.endswith((".", ";", "!", "?")):
+            return 2
         return None
     if (len(titulo.split()) > 16 or re.search(r"[,;.!?]", titulo)
             or not RE_NOME_SECAO.search(titulo) or RE_TITULO_EM_NARRATIVA.search(titulo)):
         return None
-    return 2 if "." in numero else 1
+    return 1
 
 
 def parece_qualificacao(texto: str) -> bool:
@@ -199,7 +214,7 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         parece_vocativo_orgao(texto) and estilo_original not in {"quote", "citação", "citacao"}
     ):
         estilo, conf, motivo = "FB - Endereçamento", 0.99, "Fórmula de endereçamento judicial"
-    elif RE_PROCESSO.search(texto) and len(palavras) <= 16:
+    elif RE_NUMERO_UNICO.fullmatch(texto) or (RE_PROCESSO.search(texto) and len(palavras) <= 16):
         estilo, conf, motivo = "FB - Identificação do Processo", 0.99, "Identificação curta de processo/autos"
     elif parece_fechamento_local_data(p, texto, anterior, seguinte):
         estilo, conf, motivo = "FB - Fechamento", 0.99, "Linha de encerramento com local e data ou referência ao protocolo/assinatura"
@@ -207,6 +222,8 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         estilo, conf, motivo = "FB - Assinatura", 0.98, "Nome do subscritor junto ao registro profissional"
     elif p.get("posicao_relativa", 1) < 0.30 and parece_qualificacao(texto):
         estilo, conf, motivo = "FB - Qualificação das Partes", 0.98, "Dados pessoais e representação no bloco inicial das partes"
+    elif RE_DENOMINACAO_PECA.fullmatch(texto) and estilo_original not in {"quote", "citação", "citacao"}:
+        estilo, conf, motivo = "FB - Identificação da Ação", 0.99, "Denominação isolada da peça; não é seção argumentativa"
     elif estilo_original in {"heading 1", "título 1", "titulo 1"}:
         estilo, conf, motivo = "FB - Título Principal", 0.99, "Título principal identificado pelo estilo estrutural original"
     elif estilo_original in {"heading 2", "título 2", "titulo 2"}:

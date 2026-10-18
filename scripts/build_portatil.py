@@ -10,6 +10,9 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from docx import Document
+from docx.oxml.ns import qn
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_version import VERSION
 from scripts.gerar_icone import main as gerar_icone
@@ -72,6 +75,11 @@ def main() -> None:
             "| Campo | Valor |\n| --- | --- |\n| Origem | Markdown |\n",
             encoding="utf-8",
         )
+        entrada_word = temporario_raiz / "peticao_word_sem_timbre.docx"
+        controle_word = Document()
+        controle_word.add_paragraph("Texto de teste para conferir o papel timbrado do modelo.")
+        controle_word.sections[0].footer.paragraphs[0].text = "Rodapé original de controle"
+        controle_word.save(entrada_word)
         ambiente = os.environ.copy()
         ambiente["LOCALAPPDATA"] = str(temporario_raiz / "dados_locais")
         try:
@@ -80,6 +88,7 @@ def main() -> None:
                     str(pacote / "FormatadorPeticoes.exe"),
                     str(ROOT / "modelos" / "modelo_oficial.docx"),
                     str(entrada_markdown),
+                    str(entrada_word),
                     "--saida",
                     str(saida_teste),
                     "--sem-pdf",
@@ -97,13 +106,31 @@ def main() -> None:
         saidas_docx = list(saida_teste.rglob("*_formatada.docx"))
         if (
             teste.returncode != 0
-            or len(saidas_docx) < 2
+            or len(saidas_docx) < 3
             or not any(saida_teste.rglob("entrada_intermediaria.docx"))
             or not any(saida_teste.rglob("manifesto_entrada.json"))
         ):
             raise RuntimeError(
                 "O executável foi criado, mas não passou no teste automático de DOCX e Markdown."
             )
+
+        saidas_word = list(saida_teste.rglob("peticao_word_sem_timbre_formatada.docx"))
+        if len(saidas_word) != 1:
+            raise RuntimeError("O executável não produziu o Word de controle do papel timbrado.")
+        word_final = Document(saidas_word[0])
+        cabecalho = word_final.sections[0].header
+        imagens_timbre = cabecalho._element.xpath(".//a:blip")
+        if not imagens_timbre:
+            raise RuntimeError("O executável não acrescentou o timbre do modelo à entrada Word.")
+        for imagem in imagens_timbre:
+            rel = cabecalho.part.rels[imagem.get(qn("r:embed"))]
+            if not rel.target_part.blob:
+                raise RuntimeError("A imagem timbrada do Word está vazia.")
+        if word_final.sections[0].footer.paragraphs[0].text != "Rodapé original de controle":
+            raise RuntimeError("O executável alterou o rodapé original da entrada Word.")
+        if word_final.paragraphs[0].text != controle_word.paragraphs[0].text:
+            raise RuntimeError("O executável alterou o texto do Word de controle do timbre.")
+        print("Timbre do modelo aplicado ao Word sem cabeçalho; texto e rodapé preservados.")
 
         diagnostico_interface = temporario_raiz / "diagnostico_interface.json"
         try:
