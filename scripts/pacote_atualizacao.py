@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import zipfile
@@ -15,7 +16,7 @@ from scripts.protocolo_atualizacao import (
 
 
 def manifesto_publicado() -> dict | None:
-    release = buscar_release()
+    release = buscar_release(token=os.environ.get("FORMATADOR_GITHUB_TOKEN"))
     if not any(a.get("name") == MANIFESTO for a in release.get("assets", [])):
         return None
     asset = interpretar_asset(release, MANIFESTO, MAX_MANIFESTO)

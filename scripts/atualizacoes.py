@@ -146,7 +146,7 @@ def baixar_verificado(atualizacao: Atualizacao, destino: Path) -> Path:
         parcial.unlink(missing_ok=True)
 
 
-def buscar_release(numero: str | None = None) -> dict:
+def buscar_release(numero: str | None = None, *, token: str | None = None) -> dict:
     if numero is not None:
         versao_numerica(numero)
     endpoint = f"tags/v{numero}" if numero else "latest"
@@ -154,6 +154,8 @@ def buscar_release(numero: str | None = None) -> dict:
         f"https://api.github.com/repos/{REPOSITORY}/releases/{endpoint}",
         headers={"Accept": "application/vnd.github+json", "User-Agent": f"FormatadorPeticoes/{VERSION}"},
     )
+    if token:
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
     with urlopen(request, timeout=20) as response:
         dados = response.read(MAX_MANIFESTO + 1)
     if len(dados) > MAX_MANIFESTO:
