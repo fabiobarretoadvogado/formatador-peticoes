@@ -53,7 +53,7 @@ class PortableLauncherTests(unittest.TestCase):
 
     def test_processamento_portatil_preserva_original_e_publica_resultados(self):
         with tempfile.TemporaryDirectory() as temporario:
-            raiz = Path(temporario)
+            raiz = Path(temporario).resolve()
             entrada = raiz / "Petição de teste.docx"
             documento = Document()
             documento.add_paragraph("EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO")
