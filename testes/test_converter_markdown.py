@@ -99,16 +99,14 @@ class ConverterMarkdownTests(unittest.TestCase):
             base = Path(d)
             origem = _markdown_completo(base)
             original = origem.read_bytes()
-            resultado = executar(origem, skip_pdf=True, work_root=_workspace(base))
+            resultado = executar(origem, work_root=_workspace(base))
 
             self.assertEqual(origem.read_bytes(), original)
             self.assertEqual(resultado["formato_original"], "markdown")
             self.assertTrue(Path(resultado["docx_intermediario"]).is_file())
-            self.assertTrue(Path(resultado["manifesto_ingestao"]).is_file())
             self.assertEqual(Path(resultado["backup"]).suffix, ".md")
-            relatorio = Path(resultado["relatorio"]).read_text(encoding="utf-8")
-            self.assertIn("Formato original: **Markdown (.md)**", relatorio)
-            self.assertIn("DOCX intermediário utilizado", relatorio)
+            self.assertTrue(resultado["metadados_entrada"]["auditoria_conteudo"]["aprovada"])
+            self.assertFalse(list(Path(resultado["docx_intermediario"]).parent.glob("*.json")))
 
             final = Document(resultado["docx"])
             titulo = next(p for p in final.paragraphs if p.text == "DOS FATOS")
@@ -131,7 +129,7 @@ class ConverterMarkdownTests(unittest.TestCase):
             config["formatos_entrada_suportados"] = ["docx"]
             salvar_json(config_path, config)
             with self.assertRaisesRegex(ValueError, "não está autorizado"):
-                executar(origem, skip_pdf=True, work_root=workspace)
+                executar(origem, work_root=workspace)
 
     def test_rejeita_recurso_fora_do_perfil_sem_descartar_silenciosamente(self):
         with tempfile.TemporaryDirectory() as d:

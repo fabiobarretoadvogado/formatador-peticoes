@@ -6,14 +6,12 @@ import ctypes
 import json
 import os
 import queue
-import re
-import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import traceback
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -117,6 +115,8 @@ except Exception:
     tk = _TkAusente()  # type: ignore[assignment]
     filedialog = messagebox = ttk = None  # type: ignore[assignment]
 
+from scripts.assinatura_local import AssinaturaLocal, carregar_assinatura_local
+from scripts.comum import nome_seguro, pasta_dados_locais, publicar_docx
 from scripts.pipeline import executar, executar_docx
 from app_version import VERSION
 from scripts.atualizacoes import consultar_atualizacao, preparar_incremental, iniciar_atualizacao
@@ -154,28 +154,23 @@ class ResultadoPortatil:
     entrada_pipeline: Path
     formato_original: str
     docx_intermediario: Path | None
-    manifesto_ingestao: Path | None
-    backup_original: Path | None
-    pasta_resultado: Path
+    backup_original: Path
     docx: Path
-    pdf: Path | None
-    relatorio: Path
     ambiguos: int
     aprovado: bool
-    erro_pdf: str | None
-    execucao_local: Path
-    gerar_pdf: bool
+    temporario: tempfile.TemporaryDirectory
+    modelos: Path
+    metadados_entrada: dict
+    dados_revisao: dict
+    assinatura: AssinaturaLocal | None = None
 
+    @property
+    def pasta_resultado(self) -> Path:
+        return self.docx.parent
 
-def nome_seguro(nome: str, limite: int = 80) -> str:
-    base = str(nome).strip()
-    for extensao in (".docx", ".md"):
-        if base.lower().endswith(extensao):
-            base = base[:-len(extensao)]
-            break
-    base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", base)
-    base = re.sub(r"\s+", " ", base).strip(" .")
-    return (base or "peticao")[:limite]
+    @property
+    def execucao_local(self) -> Path:
+        return Path(self.temporario.name)
 
 
 def pasta_do_aplicativo() -> Path:
@@ -204,25 +199,6 @@ def localizar_modelos() -> Path:
     )
 
 
-def raiz_execucoes_locais() -> Path:
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        return Path(base) / "FormatadorPeticoes" / "execucoes"
-    return Path.home() / ".formatador_peticoes" / "execucoes"
-
-
-def criar_pasta_unica(raiz: Path, stem: str) -> Path:
-    raiz.mkdir(parents=True, exist_ok=True)
-    prefixo = f"{nome_seguro(stem)}_{datetime.now():%Y%m%d_%H%M%S}"
-    candidata = raiz / prefixo
-    indice = 1
-    while candidata.exists():
-        candidata = raiz / f"{prefixo}_{indice:02d}"
-        indice += 1
-    candidata.mkdir(parents=True)
-    return candidata
-
-
 def validar_entrada(caminho: Path) -> Path:
     arquivo = caminho.expanduser().resolve()
     if not arquivo.is_file():
@@ -244,7 +220,6 @@ def validar_entrada(caminho: Path) -> Path:
 def processar_arquivo(
     origem: Path,
     destino_raiz: Path,
-    gerar_pdf: bool = True,
     *,
     modelos_raiz: Path | None = None,
     execucoes_raiz: Path | None = None,
@@ -252,112 +227,37 @@ def processar_arquivo(
     origem = validar_entrada(origem)
     modelos = (modelos_raiz or localizar_modelos()).resolve()
     destino_raiz = destino_raiz.expanduser().resolve()
-    execucoes_raiz = (execucoes_raiz or raiz_execucoes_locais()).resolve()
-
-    execucao = criar_pasta_unica(execucoes_raiz, origem.stem)
-    modelos_execucao = execucao / "modelos"
-    modelos_execucao.mkdir(parents=True)
-    shutil.copy2(modelos / "modelo_oficial.docx", modelos_execucao / "modelo_oficial.docx")
-    shutil.copy2(modelos / "estilos.json", modelos_execucao / "estilos.json")
-
-    resultado = executar(origem, skip_pdf=not gerar_pdf, work_root=execucao)
-    pasta_resultado = criar_pasta_unica(destino_raiz, origem.stem)
-    return _publicar_resultado(origem, resultado, execucao, pasta_resultado, gerar_pdf)
-
-
-def _publicar_resultado(
-    origem: Path,
-    resultado: dict,
-    execucao: Path,
-    pasta_resultado: Path,
-    gerar_pdf: bool,
-) -> ResultadoPortatil:
-    pasta_resultado.mkdir(parents=True, exist_ok=True)
-    stem = nome_seguro(origem.stem)
-
-    docx_origem = Path(resultado["docx"])
-    docx_destino = pasta_resultado / f"{stem}_formatada.docx"
-    shutil.copy2(docx_origem, docx_destino)
-
-    relatorio_origem = Path(resultado["relatorio"])
-    relatorio_destino = pasta_resultado / "relatorio_formatacao.md"
-    shutil.copy2(relatorio_origem, relatorio_destino)
-
-    manifesto_origem = Path(resultado["manifesto_ingestao"]) if resultado.get("manifesto_ingestao") else None
-    manifesto_destino: Path | None = None
-    if manifesto_origem and manifesto_origem.is_file():
-        manifesto_destino = pasta_resultado / "manifesto_entrada.json"
-        shutil.copy2(manifesto_origem, manifesto_destino)
-
-    intermediario_origem = Path(resultado["docx_intermediario"]) if resultado.get("docx_intermediario") else None
-    intermediario_publicado: Path | None = None
-    if intermediario_origem and intermediario_origem.is_file():
-        intermediario_publicado = pasta_resultado / "entrada_intermediaria.docx"
-        shutil.copy2(intermediario_origem, intermediario_publicado)
-
-    caminho_pdf_publicado = pasta_resultado / f"{stem}_formatada.pdf"
-    pdf_destino: Path | None = None
-    if resultado.get("pdf"):
-        pdf_destino = caminho_pdf_publicado
-        shutil.copy2(Path(resultado["pdf"]), pdf_destino)
-    elif caminho_pdf_publicado.exists():
-        caminho_pdf_publicado.unlink()
-
-    auditoria = execucao / "trabalho" / "auditoria.json"
-    if auditoria.is_file():
-        shutil.copy2(auditoria, pasta_resultado / "auditoria.json")
-
-    ambiguos = int(resultado.get("ambiguos", 0))
-    solicitacoes = execucao / "trabalho" / "solicitacoes_semanticas.json"
-    pendencias_publicadas = pasta_resultado / "pendencias_semanticas.json"
-    if ambiguos > 0 and solicitacoes.is_file():
-        shutil.copy2(solicitacoes, pendencias_publicadas)
-    elif pendencias_publicadas.exists():
-        pendencias_publicadas.unlink()
-
-    resumo = {
-        "origem": str(origem),
-        "formato_original": resultado.get("formato_original", origem.suffix.lower().lstrip(".")),
-        "entrada_pipeline": resultado.get("entrada_pipeline"),
-        "docx_intermediario": str(intermediario_publicado) if intermediario_publicado else None,
-        "manifesto_entrada": str(manifesto_destino) if manifesto_destino else None,
-        "resultado": str(docx_destino),
-        "pdf": str(pdf_destino) if pdf_destino else None,
-        "tipo_peca": resultado.get("tipo_peca", "peticao_inicial"),
-        "aprovado": bool(resultado.get("aprovado", False)),
-        "pendencias_semanticas": ambiguos,
-        "erro_pdf": resultado.get("erro_pdf"),
-        "execucao_local": str(execucao),
-        "data": datetime.now().astimezone().isoformat(timespec="seconds"),
-    }
-    (pasta_resultado / "resultado_execucao.json").write_text(
-        json.dumps(resumo, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
+    if execucoes_raiz is not None:
+        execucoes_raiz = execucoes_raiz.resolve()
+        execucoes_raiz.mkdir(parents=True, exist_ok=True)
+    temporario = tempfile.TemporaryDirectory(prefix="formatador-", dir=execucoes_raiz)
+    try:
+        assinatura = carregar_assinatura_local()
+        resultado = executar(origem, work_root=Path(temporario.name), modelos_raiz=modelos, assinatura=assinatura)
+        docx = publicar_docx(Path(resultado["docx"]), destino_raiz, nome_seguro(origem.stem))
+    except Exception:
+        temporario.cleanup()
+        raise
+    intermediario = resultado["docx_intermediario"]
     return ResultadoPortatil(
         origem=origem,
-        entrada_pipeline=Path(resultado.get("entrada_pipeline") or origem),
-        formato_original=str(resultado.get("formato_original", "docx")),
-        docx_intermediario=intermediario_origem,
-        manifesto_ingestao=manifesto_origem,
-        backup_original=Path(resultado["backup"]) if resultado.get("backup") else None,
-        pasta_resultado=pasta_resultado,
-        docx=docx_destino,
-        pdf=pdf_destino,
-        relatorio=relatorio_destino,
-        ambiguos=ambiguos,
-        aprovado=bool(resultado.get("aprovado", False)),
-        erro_pdf=resultado.get("erro_pdf"),
-        execucao_local=execucao,
-        gerar_pdf=gerar_pdf,
+        entrada_pipeline=Path(resultado["entrada_pipeline"]),
+        formato_original=resultado["formato_original"],
+        docx_intermediario=Path(intermediario) if intermediario else None,
+        backup_original=Path(resultado["backup"]),
+        docx=docx,
+        ambiguos=resultado["ambiguos"],
+        aprovado=resultado["aprovado"],
+        temporario=temporario,
+        modelos=modelos,
+        metadados_entrada=resultado["metadados_entrada"],
+        dados_revisao=resultado["solicitacoes_semanticas"],
+        assinatura=assinatura,
     )
 
 
 def carregar_dados_revisao(resultado: ResultadoPortatil) -> dict:
-    caminho = resultado.execucao_local / "trabalho" / "solicitacoes_semanticas.json"
-    if not caminho.is_file():
-        raise FileNotFoundError("As pendências semânticas desta execução não foram encontradas.")
-    return json.loads(caminho.read_text(encoding="utf-8"))
+    return resultado.dados_revisao
 
 
 def reprocessar_resultado(
@@ -397,37 +297,33 @@ def reprocessar_resultado(
         lista = ", ".join(str(identificador) for identificador in faltantes)
         raise ValueError(f"Confirme todas as pendências antes de continuar. Faltam: {lista}.")
 
-    respostas = resultado.execucao_local / "trabalho" / "respostas_semanticas.json"
-    respostas.write_text(
-        json.dumps({"tipo_peca": "peticao_inicial", "classificacoes": normalizadas}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    metadados_entrada = None
-    if resultado.manifesto_ingestao and resultado.manifesto_ingestao.is_file():
-        metadados_entrada = json.loads(resultado.manifesto_ingestao.read_text(encoding="utf-8"))
     novo_resultado = executar_docx(
         resultado.entrada_pipeline,
-        semantica=respostas,
-        skip_pdf=not resultado.gerar_pdf,
+        semantica={"classificacoes": normalizadas},
         work_root=resultado.execucao_local,
-        metadados_entrada=metadados_entrada,
-        manifesto_entrada=resultado.manifesto_ingestao,
+        modelos_raiz=resultado.modelos,
+        metadados_entrada=resultado.metadados_entrada,
         backup_original=resultado.backup_original,
+        assinatura=resultado.assinatura,
     )
-    return _publicar_resultado(
-        resultado.origem,
-        novo_resultado,
-        resultado.execucao_local,
+    publicar_docx(
+        Path(novo_resultado["docx"]),
         resultado.pasta_resultado,
-        resultado.gerar_pdf,
+        nome_seguro(resultado.origem.stem),
+        substituir=resultado.docx,
+    )
+    return replace(
+        resultado,
+        ambiguos=novo_resultado["ambiguos"],
+        aprovado=novo_resultado["aprovado"],
+        dados_revisao=novo_resultado["solicitacoes_semanticas"],
     )
 
 
 def pasta_saida_padrao(arquivos: list[Path]) -> Path:
     if arquivos:
-        return arquivos[0].expanduser().resolve().parent / "Formatados"
-    documentos = Path.home() / "Documents"
-    return documentos / "Formatador de Petições Iniciais" / "Resultados"
+        return arquivos[0].expanduser().resolve().parent
+    return Path.home() / "Documents"
 
 
 def interface_tk_funcional() -> bool:
@@ -542,23 +438,20 @@ def executar_modo_nativo(args: argparse.Namespace) -> int:
     falhas: list[tuple[Path, str]] = []
     for arquivo in arquivos:
         try:
-            resultados.append(processar_arquivo(arquivo, Path(destino), not args.sem_pdf))
+            resultados.append(processar_arquivo(arquivo, Path(destino)))
         except Exception as exc:
             falhas.append((arquivo, str(exc)))
 
     pendencias = sum(r.ambiguos for r in resultados)
-    erros_pdf = sum(1 for r in resultados if r.erro_pdf)
     linhas = [f"{len(resultados)} documento(s) concluído(s)."]
     if pendencias:
         linhas.append(f"{pendencias} pendência(s) semântica(s).")
-    if erros_pdf:
-        linhas.append(f"PDF não gerado em {erros_pdf} documento(s); o DOCX foi preservado.")
     if falhas:
         linhas.append(f"{len(falhas)} falha(s):")
         linhas.extend(f"• {arquivo.name}: {erro}" for arquivo, erro in falhas)
 
     if not args.silencioso:
-        mensagem_nativa("\n".join(linhas), "aviso" if falhas or pendencias or erros_pdf else "info")
+        mensagem_nativa("\n".join(linhas), "aviso" if falhas or pendencias else "info")
         if resultados and os.name == "nt":
             Path(destino).mkdir(parents=True, exist_ok=True)
             os.startfile(Path(destino))  # type: ignore[attr-defined]
@@ -570,7 +463,6 @@ class Aplicativo(tk.Tk):
         self,
         arquivos_iniciais: list[Path] | None = None,
         saida_inicial: Path | None = None,
-        gerar_pdf: bool = True,
         auto_iniciar: bool = False,
     ) -> None:
         super().__init__()
@@ -592,7 +484,6 @@ class Aplicativo(tk.Tk):
         self.atualizando = False
 
         self.saida_var = tk.StringVar()
-        self.pdf_var = tk.BooleanVar(value=gerar_pdf)
         self.status_var = tk.StringVar(value="Pronto para selecionar as petições iniciais.")
         self.progresso_var = tk.DoubleVar(value=0)
         self.estilo_var = tk.StringVar()
@@ -603,7 +494,8 @@ class Aplicativo(tk.Tk):
         self._montar_estrutura()
         self._mostrar_selecao()
         self.adicionar_arquivos(arquivos_iniciais or [])
-        self.saida_var.set(str(saida_inicial or pasta_saida_padrao(self.arquivos)))
+        self.saida_sugerida = None if saida_inicial else str(pasta_saida_padrao(self.arquivos))
+        self.saida_var.set(str(saida_inicial) if saida_inicial else self.saida_sugerida)
 
         self.bind_all("<Control-o>", lambda _e: self._selecionar_arquivos())
         self.bind_all("<Control-Return>", self._atalho_principal)
@@ -811,11 +703,8 @@ class Aplicativo(tk.Tk):
             row=1, column=1, padx=(8, 0)
         )
         ttk.Label(
-            opcoes, text="Uma subpasta será criada para cada documento.", style="CardMuted.TLabel"
+            opcoes, text="O Word formatado será salvo diretamente nesta pasta.", style="CardMuted.TLabel"
         ).grid(row=2, column=0, sticky="w")
-        ttk.Checkbutton(
-            opcoes, text="Gerar também uma cópia em PDF usando o Microsoft Word", variable=self.pdf_var
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
         try:
             localizar_modelos()
             texto_modelo, cor_modelo = "Modelo oficial e regras: disponíveis", CORES["sucesso"]
@@ -867,8 +756,9 @@ class Aplicativo(tk.Tk):
             if self.etapa_atual != 1:
                 self._mostrar_selecao()
             self.adicionar_arquivos([Path(p) for p in escolhidos])
-            if estava_vazio and self.arquivos:
-                self.saida_var.set(str(pasta_saida_padrao(self.arquivos)))
+            if estava_vazio and self.arquivos and self.saida_var.get() == self.saida_sugerida:
+                self.saida_sugerida = str(pasta_saida_padrao(self.arquivos))
+                self.saida_var.set(self.saida_sugerida)
 
     def _remover_selecionado(self) -> None:
         indices = sorted((int(item) for item in self.lista.selection()), reverse=True)
@@ -885,6 +775,7 @@ class Aplicativo(tk.Tk):
             title="Escolha a pasta dos resultados", initialdir=self.saida_var.get() or None
         )
         if escolhida:
+            self.saida_sugerida = None
             self.saida_var.set(escolhida)
 
     def iniciar_processamento(self) -> None:
@@ -914,7 +805,7 @@ class Aplicativo(tk.Tk):
         self._mostrar_processamento(revisao=False)
         threading.Thread(
             target=self._executar_lote,
-            args=(list(self.arquivos), Path(self.saida_var.get()), self.pdf_var.get()),
+            args=(list(self.arquivos), Path(self.saida_var.get())),
             daemon=True,
         ).start()
 
@@ -929,7 +820,7 @@ class Aplicativo(tk.Tk):
         apoio = (
             "As escolhas confirmadas estão sendo aplicadas e novamente verificadas."
             if revisao else
-            "O tempo varia conforme o tamanho dos arquivos e a geração do PDF."
+            "O tempo varia conforme o tamanho dos arquivos."
         )
         ttk.Label(painel, text=titulo, style="Section.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(painel, text=apoio, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(3, 14))
@@ -970,16 +861,8 @@ class Aplicativo(tk.Tk):
             self.botao_cancelar.configure(state="disabled")
         self.status_var.set("Cancelamento solicitado. O documento atual será concluído com segurança.")
 
-    def _executar_lote(self, arquivos: list[Path], destino: Path, gerar_pdf: bool) -> None:
-        inicializou_com = False
+    def _executar_lote(self, arquivos: list[Path], destino: Path) -> None:
         try:
-            try:
-                import pythoncom  # type: ignore
-
-                pythoncom.CoInitialize()
-                inicializou_com = True
-            except ImportError:
-                pass
 
             total = len(arquivos)
             resultados: list[ResultadoPortatil] = []
@@ -992,7 +875,7 @@ class Aplicativo(tk.Tk):
                 self.fila.put(("arquivo_status", (indice, "Formatando")))
                 self.fila.put(("status", f"Formatando {arquivo.name} ({indice + 1}/{total})..."))
                 try:
-                    resultado = processar_arquivo(arquivo, destino, gerar_pdf)
+                    resultado = processar_arquivo(arquivo, destino)
                     resultados.append(resultado)
                     situacao = "Revisão necessária" if resultado.ambiguos else "Formatado"
                     self.fila.put(("arquivo_status", (indice, situacao)))
@@ -1004,14 +887,6 @@ class Aplicativo(tk.Tk):
             self.fila.put(("concluido", (resultados, falhas)))
         except Exception as exc:
             self.fila.put(("fatal", str(exc)))
-        finally:
-            if inicializou_com:
-                try:
-                    import pythoncom  # type: ignore
-
-                    pythoncom.CoUninitialize()
-                except Exception:
-                    pass
 
     def _preparar_revisao(self) -> None:
         self.pendencias_revisao = []
@@ -1250,15 +1125,7 @@ class Aplicativo(tk.Tk):
         threading.Thread(target=self._executar_revisao, daemon=True).start()
 
     def _executar_revisao(self) -> None:
-        inicializou_com = False
         try:
-            try:
-                import pythoncom  # type: ignore
-
-                pythoncom.CoInitialize()
-                inicializou_com = True
-            except ImportError:
-                pass
             novos: list[ResultadoPortatil] = []
             falhas: list[tuple[Path, str]] = []
             total = len(self.resultados)
@@ -1284,14 +1151,6 @@ class Aplicativo(tk.Tk):
             self.fila.put(("revisao_concluida", (novos, falhas)))
         except Exception as exc:
             self.fila.put(("fatal", str(exc)))
-        finally:
-            if inicializou_com:
-                try:
-                    import pythoncom  # type: ignore
-
-                    pythoncom.CoUninitialize()
-                except Exception:
-                    pass
 
     def _ler_fila(self) -> None:
         try:
@@ -1372,7 +1231,7 @@ class Aplicativo(tk.Tk):
         if resultado.ambiguos:
             return "Revisão necessária"
         if not resultado.aprovado:
-            return "Verificar relatório"
+            return "Conferir documento"
         return "Formatado e verificado"
 
     def _mostrar_resultados(self) -> None:
@@ -1397,21 +1256,18 @@ class Aplicativo(tk.Tk):
         lista_frame.columnconfigure(0, weight=1)
         lista_frame.rowconfigure(0, weight=1)
         self.lista_resultados = ttk.Treeview(
-            lista_frame, columns=("documento", "situacao", "docx", "pdf"), show="headings", selectmode="browse"
+            lista_frame, columns=("documento", "situacao"), show="headings", selectmode="browse"
         )
-        for coluna, titulo in (("documento", "Documento"), ("situacao", "Situação"), ("docx", "DOCX"), ("pdf", "PDF")):
+        for coluna, titulo in (("documento", "Word formatado"), ("situacao", "Situação")):
             self.lista_resultados.heading(coluna, text=titulo)
         self.lista_resultados.column("documento", width=480)
         self.lista_resultados.column("situacao", width=220, anchor="center")
-        self.lista_resultados.column("docx", width=95, anchor="center")
-        self.lista_resultados.column("pdf", width=95, anchor="center")
         self.lista_resultados.grid(row=0, column=0, sticky="nsew")
         self.lista_resultados.bind("<<TreeviewSelect>>", lambda _e: self._atualizar_botoes_resultado())
         for indice, resultado in enumerate(self.resultados):
-            pdf = "Disponível" if resultado.pdf else ("Falhou" if resultado.erro_pdf else "Não solicitado")
             self.lista_resultados.insert(
                 "", "end", iid=str(indice),
-                values=(resultado.origem.name, self._situacao_resultado(resultado), "Disponível", pdf),
+                values=(resultado.docx.name, self._situacao_resultado(resultado)),
             )
         if self.resultados:
             self.lista_resultados.selection_set("0")
@@ -1428,14 +1284,6 @@ class Aplicativo(tk.Tk):
             abertura, text="Abrir DOCX", style="Secondary.TButton", command=lambda: self._abrir_resultado("docx")
         )
         self.botao_abrir_docx.pack(side="left")
-        self.botao_abrir_pdf = ttk.Button(
-            abertura, text="Abrir PDF", style="Secondary.TButton", command=lambda: self._abrir_resultado("pdf")
-        )
-        self.botao_abrir_pdf.pack(side="left", padx=(8, 0))
-        self.botao_abrir_relatorio = ttk.Button(
-            abertura, text="Abrir relatório", style="Secondary.TButton", command=lambda: self._abrir_resultado("relatorio")
-        )
-        self.botao_abrir_relatorio.pack(side="left", padx=(8, 0))
         self.botao_abrir_pasta = ttk.Button(
             abertura, text="Abrir pasta", style="Secondary.TButton", command=lambda: self._abrir_resultado("pasta_resultado")
         )
@@ -1462,13 +1310,11 @@ class Aplicativo(tk.Tk):
     def _atualizar_botoes_resultado(self) -> None:
         resultado = self._resultado_selecionado()
         if not resultado:
-            for nome in ("botao_abrir_docx", "botao_abrir_pdf", "botao_abrir_relatorio", "botao_abrir_pasta"):
+            for nome in ("botao_abrir_docx", "botao_abrir_pasta"):
                 if hasattr(self, nome):
                     getattr(self, nome).configure(state="disabled")
             return
         self.botao_abrir_docx.configure(state="normal" if resultado.docx.is_file() else "disabled")
-        self.botao_abrir_pdf.configure(state="normal" if resultado.pdf and resultado.pdf.is_file() else "disabled")
-        self.botao_abrir_relatorio.configure(state="normal" if resultado.relatorio.is_file() else "disabled")
         self.botao_abrir_pasta.configure(state="normal" if resultado.pasta_resultado.is_dir() else "disabled")
 
     def _abrir_resultado(self, atributo: str) -> None:
@@ -1580,7 +1426,7 @@ class Aplicativo(tk.Tk):
 
         def baixar() -> None:
             try:
-                destino = raiz_execucoes_locais().parent / "atualizacoes" / atualizacao.versao
+                destino = pasta_dados_locais() / "atualizacoes" / atualizacao.versao
                 preparada = preparar_incremental(atualizacao, pasta_do_aplicativo(), destino.parent)
                 self.fila.put(("atualizacao_preparada", preparada))
             except Exception as exc:
@@ -1606,7 +1452,7 @@ def analisar_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("arquivos", nargs="*")
     parser.add_argument("--saida", type=Path)
-    parser.add_argument("--sem-pdf", action="store_true")
+    parser.add_argument("--sem-pdf", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--nao-iniciar", action="store_true")
     parser.add_argument("--silencioso", action="store_true")
     parser.add_argument("--validar-interface", type=Path)
@@ -1648,7 +1494,6 @@ def main() -> None:
     app = Aplicativo(
         arquivos_iniciais=arquivos,
         saida_inicial=args.saida,
-        gerar_pdf=not args.sem_pdf,
         auto_iniciar=bool(arquivos) and not args.nao_iniciar,
     )
     app.update_idletasks()

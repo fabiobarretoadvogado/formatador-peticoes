@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import tempfile
 import zipfile
@@ -13,6 +14,10 @@ from lxml import etree as ET
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
+IDIOMA_REVISAO = "pt-BR"
+_PARTES_REVISAO = re.compile(
+    r"word/(?:document|stylesWithEffects|numbering|footnotes|endnotes|comments|header\d+|footer\d+)\.xml"
+)
 
 
 # CT_Style has a fixed child order in WordprocessingML. ElementTree preserves
@@ -129,10 +134,53 @@ def _style_name(style: ET.Element) -> str:
     return _value(style, "name")
 
 
-def _configure_styles(styles_xml: bytes, custom_names: Iterable[str]) -> bytes:
+def _idioma_padrao(styles: ET.Element) -> ET.Element:
+    defaults = _child(styles, "docDefaults")
+    if defaults is None:
+        defaults = ET.Element(_qn("docDefaults"))
+        styles.insert(0, defaults)
+    run_default = _child(defaults, "rPrDefault")
+    if run_default is None:
+        run_default = ET.Element(_qn("rPrDefault"))
+        defaults.insert(0, run_default)
+    rpr = _child(run_default, "rPr")
+    if rpr is None:
+        rpr = ET.SubElement(run_default, _qn("rPr"))
+    lang = _child(rpr, "lang")
+    if lang is None:
+        lang = ET.Element(_qn("lang"))
+        sucessores = {_qn(tag) for tag in ("eastAsianLayout", "specVanish", "oMath", "rPrChange")}
+        sucessor = next((item for item in rpr if item.tag in sucessores), None)
+        if sucessor is None:
+            rpr.append(lang)
+        else:
+            sucessor.addprevious(lang)
+    return lang
+
+
+def _configurar_idioma(root: ET.Element, idioma: str, *, estilos: bool = False) -> bool:
+    alterado = False
+    if estilos:
+        padrao = _idioma_padrao(root)
+        if padrao.get(_qn("val")) != idioma:
+            padrao.set(_qn("val"), idioma)
+            alterado = True
+
+    # w:val é o idioma de revisão dos caracteres latinos no Word.
+    for lang in root.xpath(".//w:rPr/w:lang[not(ancestor::w:rPrChange)]", namespaces=NS):
+        atual = lang.get(_qn("val"))
+        if atual is not None and atual != idioma:
+            lang.set(_qn("val"), idioma)
+            alterado = True
+    return alterado
+
+
+def _configure_styles(styles_xml: bytes, custom_names: Iterable[str], idioma: str | None) -> bytes:
     custom_names = list(custom_names)
     custom_name_set = set(custom_names)
     root = ET.fromstring(styles_xml)
+    if idioma is not None:
+        _configurar_idioma(root, idioma, estilos=True)
     styles = root.findall(_qn("style"))
 
     for style in styles:
@@ -176,8 +224,14 @@ def _configure_settings(settings_xml: bytes) -> bytes:
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-def ajustar_arquivo(origem: Path, destino: Path, nomes_customizados: Iterable[str]) -> Path:
-    """Write a copy of a DOCX with only authored styles exposed in Word."""
+def ajustar_arquivo(
+    origem: Path,
+    destino: Path,
+    nomes_customizados: Iterable[str],
+    *,
+    idioma_revisao: str | None = None,
+) -> Path:
+    """Expõe os estilos autorais e aplica o idioma de revisão quando solicitado."""
     origem = origem.resolve()
     destino = destino.resolve()
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -192,9 +246,13 @@ def ajustar_arquivo(origem: Path, destino: Path, nomes_customizados: Iterable[st
             for info in source.infolist():
                 data = source.read(info.filename)
                 if info.filename == "word/styles.xml":
-                    data = _configure_styles(data, nomes_customizados)
+                    data = _configure_styles(data, nomes_customizados, idioma_revisao)
                 elif info.filename == "word/settings.xml":
                     data = _configure_settings(data)
+                elif idioma_revisao is not None and _PARTES_REVISAO.fullmatch(info.filename):
+                    root = ET.fromstring(data)
+                    if _configurar_idioma(root, idioma_revisao, estilos=info.filename == "word/stylesWithEffects.xml"):
+                        data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
                 output.writestr(info, data)
         shutil.move(str(temporario), str(destino))
     finally:

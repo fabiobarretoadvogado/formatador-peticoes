@@ -5,12 +5,12 @@ import zipfile
 from pathlib import Path
 
 from docx import Document
-from docx.enum.text import WD_BREAK
-from docx.oxml.ns import qn
 
 try:
+    from .numeracao_word import formatos_das_listas, numeracao_do_paragrafo
     from .comum import ROOT, TIPO_PECA_SUPORTADO, agora_iso, hash_texto, salvar_json
 except ImportError:
+    from numeracao_word import formatos_das_listas, numeracao_do_paragrafo
     from comum import ROOT, TIPO_PECA_SUPORTADO, agora_iso, hash_texto, salvar_json
 
 
@@ -43,14 +43,15 @@ def _caracteristicas_runs(paragrafo):
 
 def extrair(caminho: Path) -> dict:
     doc = Document(caminho)
+    formatos = formatos_das_listas(doc)
     total = max(1, len(doc.paragraphs))
     pagina = 1
     paragrafos = []
     for i, p in enumerate(doc.paragraphs, 1):
         xml = p._p.xml
-        numpr = p._p.pPr.find(qn("w:numPr")) if p._p.pPr is not None else None
-        numid = numpr.find(qn("w:numId")) if numpr is not None else None
-        ilvl = numpr.find(qn("w:ilvl")) if numpr is not None else None
+        numpr = numeracao_do_paragrafo(p)
+        numid = str(numpr.numId.val) if numpr is not None else None
+        nivel = int(numpr.ilvl.val) if numpr is not None and numpr.ilvl is not None else 0
         registro = {
             "id": i,
             "texto": p.text,
@@ -61,9 +62,10 @@ def extrair(caminho: Path) -> dict:
             "recuo_primeira_linha_cm": _cm(_formato_efetivo(p, "first_line_indent")),
             "espacamento_antes_pt": _pt(_formato_efetivo(p, "space_before")),
             "espacamento_depois_pt": _pt(_formato_efetivo(p, "space_after")),
-            "possui_numeracao": numpr is not None and numid is not None,
-            "numero_lista_id": numid.get(qn("w:val")) if numid is not None else None,
-            "nivel_lista": int(ilvl.get(qn("w:val"))) if ilvl is not None else 0,
+            "possui_numeracao": numpr is not None,
+            "numero_lista_id": numid,
+            "nivel_lista": nivel,
+            "formato_lista": formatos.get((numid, str(nivel))),
             "posicao_relativa": round((i - 1) / total, 4),
             "pagina_aproximada": pagina,
             **_caracteristicas_runs(p),

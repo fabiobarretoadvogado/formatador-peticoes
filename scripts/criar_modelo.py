@@ -11,11 +11,11 @@ from docx.shared import Cm, Pt
 
 try:
     from .comum import ROOT
-    from .configurar_visibilidade_estilos import ajustar_arquivo
+    from .configurar_visibilidade_estilos import IDIOMA_REVISAO, ajustar_arquivo
     from .numeracao_word import criar_lista_multinivel_titulos
 except ImportError:
     from comum import ROOT
-    from configurar_visibilidade_estilos import ajustar_arquivo
+    from configurar_visibilidade_estilos import IDIOMA_REVISAO, ajustar_arquivo
     from numeracao_word import criar_lista_multinivel_titulos
 
 
@@ -113,7 +113,7 @@ def criar_modelo(destino: Path | None = None) -> Path:
     # O modelo continua contendo os estilos internos necessários ao Word, mas
     # o painel de estilos mostra somente os estilos autorais do escritório.
     temporario = destino.with_name(f".{destino.stem}.estilos_visiveis.docx")
-    ajustar_arquivo(destino, temporario, specs)
+    ajustar_arquivo(destino, temporario, specs, idioma_revisao=IDIOMA_REVISAO)
     temporario.replace(destino)
     return destino
 

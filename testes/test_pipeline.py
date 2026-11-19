@@ -57,7 +57,7 @@ class PipelineTests(unittest.TestCase):
             doc.add_paragraph("OAB/SE nº 12.563")
             doc.save(entrada)
             original = entrada.read_bytes()
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
             linha = next(p for p in final.paragraphs if p.text == "Aracaju/SE, data do protocolo.")
             self.assertEqual(linha.style.name, "FB - Fechamento")
@@ -82,7 +82,7 @@ class PipelineTests(unittest.TestCase):
                     shutil.copy2(presente, modelos / presente.name)
 
                     with self.assertRaisesRegex(FileNotFoundError, "execução foi interrompida"):
-                        executar(entrada, skip_pdf=True, work_root=workspace)
+                        executar(entrada, work_root=workspace)
                     self.assertFalse((workspace / "saida" / "peticao_formatada.docx").exists())
 
     def test_pipeline_interrompe_com_regras_de_outro_escopo(self):
@@ -96,7 +96,7 @@ class PipelineTests(unittest.TestCase):
             salvar_json(config_path, config)
 
             with self.assertRaisesRegex(ValueError, "escopo atual de petição inicial"):
-                executar(entrada, skip_pdf=True, work_root=workspace)
+                executar(entrada, work_root=workspace)
             self.assertFalse((workspace / "saida" / "peticao_formatada.docx").exists())
 
     def test_extracao_e_regras(self):
@@ -134,7 +134,7 @@ class PipelineTests(unittest.TestCase):
             workspace = _workspace_teste(d)
 
             self.assertEqual(extrair(entrada)["tipo_peca"], "peticao_inicial")
-            resultado = executar(entrada, skip_pdf=True, work_root=workspace)
+            resultado = executar(entrada, work_root=workspace)
             self.assertTrue(Path(resultado["docx"]).exists())
             self.assertEqual(entrada.read_bytes(), original)
 
@@ -202,7 +202,7 @@ class PipelineTests(unittest.TestCase):
                 "justificativa": "Confirmação em lote incorreta.",
             }]})
 
-            resultado = executar(entrada, semantica=respostas, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, semantica=respostas, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
             processo_final = next(p for p in final.paragraphs if "Processo" in p.text)
             self.assertEqual(processo_final.style.name, "FB - Identificação do Processo")
@@ -379,7 +379,7 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             entrada = Path(d) / "original.docx"
             _amostra(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
 
             with zipfile.ZipFile(resultado["docx"]) as pacote:
                 styles = ET.fromstring(pacote.read("word/styles.xml"))
@@ -424,7 +424,7 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             entrada = Path(d) / "original.docx"
             _amostra(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
 
             for nome in config["estilos_permitidos"]:
@@ -474,7 +474,7 @@ class PipelineTests(unittest.TestCase):
             num = OxmlElement("w:num"); num.set(qn("w:numId"), num_id); abstract_ref = OxmlElement("w:abstractNumId"); abstract_ref.set(qn("w:val"), abstract_id); num.append(abstract_ref); numbering.append(num)
             ppr = principal_origem._p.get_or_add_pPr(); numpr = OxmlElement("w:numPr"); ilvl = OxmlElement("w:ilvl"); ilvl.set(qn("w:val"), "0"); numid = OxmlElement("w:numId"); numid.set(qn("w:val"), num_id); numpr.extend([ilvl, numid]); ppr.append(numpr)
             doc.save(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             self.assertTrue(resultado["aprovado"])
             self.assertEqual(resultado["ambiguos"], 0)
             final = Document(resultado["docx"])
@@ -523,22 +523,21 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             entrada = Path(d) / "original.docx"; _amostra(entrada)
             workspace = _workspace_teste(d)
-            resultado = executar(entrada, skip_pdf=True, work_root=workspace)
-            solicitacoes = carregar_json(workspace / "trabalho" / "solicitacoes_semanticas.json")
+            resultado = executar(entrada, work_root=workspace)
+            solicitacoes = resultado["solicitacoes_semanticas"]
             self.assertEqual(set(solicitacoes["catalogo_semantico"]), set(solicitacoes["estilos_permitidos"]))
             self.assertEqual(set(solicitacoes["formatacao_estilos"]), set(solicitacoes["estilos_permitidos"]))
-            self.assertIn("catalogo_semantico", solicitacoes["instrucoes"])
             self.assertIn("tipo_peca", solicitacoes)
             self.assertIn("regras_contextuais", solicitacoes)
-            self.assertTrue(Path(resultado["relatorio"]).exists())
+            self.assertEqual(list(Path(resultado["docx"]).parent.iterdir()), [Path(resultado["docx"])])
 
     def test_revisao_semantica_resolve_pendencias_e_aprova_auditoria(self):
         with tempfile.TemporaryDirectory() as d:
             entrada = Path(d) / "original.docx"
             _amostra(entrada)
             workspace = _workspace_teste(d)
-            primeiro = executar(entrada, skip_pdf=True, work_root=workspace)
-            solicitacoes = carregar_json(workspace / "trabalho" / "solicitacoes_semanticas.json")
+            primeiro = executar(entrada, work_root=workspace)
+            solicitacoes = primeiro["solicitacoes_semanticas"]
             self.assertGreater(primeiro["ambiguos"], 0)
             self.assertFalse(primeiro["aprovado"])
 
@@ -554,10 +553,10 @@ class PipelineTests(unittest.TestCase):
                 for item in solicitacoes["itens"]
             ]})
 
-            revisado = executar(entrada, semantica=respostas, skip_pdf=True, work_root=workspace)
+            revisado = executar(entrada, semantica=respostas, work_root=workspace)
             self.assertEqual(revisado["ambiguos"], 0)
             self.assertTrue(revisado["aprovado"])
-            novas_solicitacoes = carregar_json(workspace / "trabalho" / "solicitacoes_semanticas.json")
+            novas_solicitacoes = revisado["solicitacoes_semanticas"]
             self.assertEqual(novas_solicitacoes["itens"], [])
 
     def test_revisao_semantica_rejeita_resposta_de_texto_alterado(self):
@@ -565,8 +564,8 @@ class PipelineTests(unittest.TestCase):
             entrada = Path(d) / "original.docx"
             _amostra(entrada)
             workspace = _workspace_teste(d)
-            primeiro = executar(entrada, skip_pdf=True, work_root=workspace)
-            solicitacoes = carregar_json(workspace / "trabalho" / "solicitacoes_semanticas.json")
+            primeiro = executar(entrada, work_root=workspace)
+            solicitacoes = primeiro["solicitacoes_semanticas"]
             item = solicitacoes["itens"][0]
             respostas = workspace / "trabalho" / "respostas_semanticas.json"
             salvar_json(respostas, {"classificacoes": [{
@@ -577,7 +576,7 @@ class PipelineTests(unittest.TestCase):
                 "justificativa": "Resposta obsoleta.",
             }]})
 
-            revisado = executar(entrada, semantica=respostas, skip_pdf=True, work_root=workspace)
+            revisado = executar(entrada, semantica=respostas, work_root=workspace)
             self.assertEqual(revisado["ambiguos"], primeiro["ambiguos"])
             self.assertFalse(revisado["aprovado"])
 
@@ -619,7 +618,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(regras[0]["estilo_destino"], "FB - Endereçamento")
             self.assertEqual(regras[2]["estilo_destino"], "FB - Qualificação das Partes")
 
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             self.assertTrue(resultado["aprovado"])
             self.assertEqual(resultado["ambiguos"], 0)
             final = Document(resultado["docx"])
@@ -694,7 +693,7 @@ class PipelineTests(unittest.TestCase):
             )
             run.bold = True
             doc.save(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
             p = final.paragraphs[0]
             negrito = "".join(run.text for run in p.runs if run.bold)
@@ -713,7 +712,7 @@ class PipelineTests(unittest.TestCase):
             p = doc.add_paragraph()
             p.add_run("Texto jurídico corrido que não deve permanecer em negrito porque desenvolve fatos, fundamentos, argumentos e transições dentro da peça processual, sem exercer função de título, subtítulo, pedido, assinatura ou qualquer outro papel estrutural.").bold = True
             doc.save(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
             self.assertTrue(all(not bool(run.bold) for run in final.paragraphs[0].runs))
 
@@ -727,7 +726,7 @@ class PipelineTests(unittest.TestCase):
             doc.add_paragraph("Fábio Augusto Mendonça Barreto")
             doc.add_paragraph("OAB/SE nº 12.563")
             doc.save(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
             paragrafos_com_imagem = [p for p in final.paragraphs if p._p.xpath(".//w:drawing")]
             self.assertEqual(len(paragrafos_com_imagem), 1)
@@ -739,19 +738,64 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             entrada = Path(d) / "original.docx"; _amostra(entrada)
             antes = entrada.read_bytes()
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             self.assertEqual(resultado["tipo_peca"], "peticao_inicial")
             self.assertEqual(entrada.read_bytes(), antes)
             final = Document(resultado["docx"]); original = Document(entrada)
             self.assertEqual([p.text for p in final.paragraphs], [p.text for p in original.paragraphs])
             config = carregar_json(Path(__file__).parents[1] / "modelos" / "estilos.json")
             self.assertTrue(all(p.style.name in config["estilos_permitidos"] for p in final.paragraphs))
-            self.assertTrue(Path(resultado["relatorio"]).exists())
+            self.assertEqual(list(Path(resultado["docx"]).parent.iterdir()), [Path(resultado["docx"])])
+
+    def test_idioma_de_revisao_pt_br_substitui_ingles_da_origem(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            entrada = raiz / "peticao.docx"
+            doc = Document()
+            padrao, = doc.styles.element.xpath("w:docDefaults//w:lang")
+            padrao.set(qn("w:val"), "en-US")
+            idioma_estilo = OxmlElement("w:lang")
+            idioma_estilo.set(qn("w:val"), "en-GB")
+            doc.styles["Normal"].element.get_or_add_rPr().append(idioma_estilo)
+            doc.add_paragraph("Ao Juízo da Vara Cível da Comarca de Teste.")
+            titulo = doc.add_paragraph("Dos fatos", "Heading 1")
+            tabela = doc.add_table(rows=1, cols=1)
+            for paragrafo in (
+                titulo,
+                tabela.cell(0, 0).paragraphs[0],
+                doc.sections[0].header.paragraphs[0],
+                doc.sections[0].footer.paragraphs[0],
+            ):
+                run = paragrafo.runs[0] if paragrafo.runs else paragrafo.add_run("Texto de conferência.")
+                lang = OxmlElement("w:lang")
+                lang.set(qn("w:val"), "en-US")
+                lang.set(qn("w:eastAsia"), "ja-JP")
+                run._element.get_or_add_rPr().append(lang)
+            doc.save(entrada)
+            original = entrada.read_bytes()
+
+            resultado = executar(entrada, work_root=_workspace_teste(raiz))
+            saida = Document(resultado["docx"])
+            padrao, = saida.styles.element.xpath("w:docDefaults//w:lang")
+            self.assertEqual(padrao.get(qn("w:val")), "pt-BR")
+            normal, = saida.styles["Normal"].element.xpath("w:rPr/w:lang")
+            self.assertEqual(normal.get(qn("w:val")), "pt-BR")
+            for paragrafo in (
+                saida.paragraphs[1],
+                saida.tables[0].cell(0, 0).paragraphs[0],
+                saida.sections[0].header.paragraphs[0],
+                saida.sections[0].footer.paragraphs[0],
+            ):
+                lang, = paragrafo._p.xpath(".//w:rPr/w:lang")
+                self.assertEqual(lang.get(qn("w:val")), "pt-BR")
+                self.assertEqual(lang.get(qn("w:eastAsia")), "ja-JP")
+            self.assertEqual(saida.paragraphs[1].text, "Dos fatos")
+            self.assertEqual(entrada.read_bytes(), original)
 
     def test_identificacao_do_processo_fica_negrita_na_saida(self):
         with tempfile.TemporaryDirectory() as d:
             entrada = Path(d) / "original.docx"; _amostra(entrada)
-            resultado = executar(entrada, skip_pdf=True, work_root=_workspace_teste(d))
+            resultado = executar(entrada, work_root=_workspace_teste(d))
             final = Document(resultado["docx"])
             processo = next(p for p in final.paragraphs if "Processo" in p.text)
             self.assertEqual(processo.style.name, "FB - Identificação do Processo")

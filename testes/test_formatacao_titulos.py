@@ -21,6 +21,8 @@ class FormatacaoTitulosTests(unittest.TestCase):
         for nome in TITULOS:
             self.assertTrue(doc.styles[nome].font.bold)
             self.assertTrue(doc.styles[nome].font.cs_bold)
+            self.assertTrue(doc.styles[nome].font.all_caps)
+            self.assertFalse(doc.styles[nome].font.small_caps)
         estilo = doc.styles[TITULOS[1]]
         self.assertAlmostEqual(estilo.paragraph_format.left_indent.cm, 1, places=2)
         self.assertAlmostEqual(estilo.paragraph_format.first_line_indent.cm, 1, places=2)
@@ -47,9 +49,11 @@ class FormatacaoTitulosTests(unittest.TestCase):
 
     def test_modelo_oficial_e_catalogo_concordam_com_a_regra(self):
         self.conferir(Document(MODELO))
+        for nome in TITULOS:
+            self.assertTrue(CONFIG["formatacao_estilos"][nome]["caixa_alta"])
         self.assertEqual(CONFIG["formatacao_estilos"][TITULOS[1]]["recuo_primeira_linha_cm"], 1)
 
-    def test_origem_sem_negrito_e_com_deslocamento_nao_prevalece(self):
+    def test_titulos_aparecem_em_caixa_alta_e_negrito_sobre_formatacao_direta(self):
         doc = Document()
         doc.add_paragraph("Título principal", style="Heading 1")
         p = doc.add_paragraph("Subtítulo extenso para conferir a primeira linha e a continuação do texto", style="Heading 2")
@@ -72,6 +76,8 @@ class FormatacaoTitulosTests(unittest.TestCase):
             for trecho in paragrafo.runs:
                 trecho.bold = False
                 trecho.font.cs_bold = False
+                trecho.font.all_caps = False
+                trecho.font.small_caps = True
             marca = OxmlElement("w:rPr")
             b = OxmlElement("w:b")
             b.set(qn("w:val"), "0")
@@ -94,14 +100,17 @@ class FormatacaoTitulosTests(unittest.TestCase):
             self.conferir(resultado)
             for indice, paragrafo in enumerate(resultado.paragraphs[:2]):
                 self.assertEqual(paragrafo.style.name, TITULOS[indice])
+                self.assertEqual(paragrafo.text, doc.paragraphs[indice].text)
                 for rpr in [paragrafo._p.pPr.find(qn("w:rPr")), *paragrafo._p.xpath(".//w:r/w:rPr")]:
-                    for atributo in ("b", "bCs"):
+                    for atributo in ("b", "bCs", "caps"):
                         flag = rpr.find(qn("w:" + atributo))
                         self.assertIsNotNone(flag)
                         self.assertNotIn(flag.get(qn("w:val")), ("0", "false", "off"))
+                    self.assertEqual(rpr.find(qn("w:smallCaps")).get(qn("w:val")), "0")
             subtitulo = resultado.paragraphs[1]
             self.assertAlmostEqual(subtitulo.paragraph_format.first_line_indent.cm, 1, places=2)
             self.assertIsNone(subtitulo._p.pPr.ind.get(qn("w:hanging")))
             self.assertIn(" complemento", "".join(subtitulo._p.xpath(".//w:t/text()")))
             self.assertEqual(resultado.paragraphs[2].text, doc.paragraphs[2].text)
+            self.assertFalse(resultado.paragraphs[2].runs[0].font.all_caps)
             self.assertFalse(resultado.styles["FB - Corpo"].font.bold)

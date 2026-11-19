@@ -21,11 +21,19 @@ from lxml import etree
 from PIL import Image, ImageOps
 
 try:
+    from .assinatura_local import (
+        AssinaturaLocal, ESTILO_ASSINATURA, inserir_imagem_assinatura,
+        localizar_bloco_assinatura, manter_blocos_assinatura,
+    )
     from .comum import ROOT, carregar_json
-    from .numeracao_word import ESTILOS_TITULO, criar_lista_multinivel_titulos, criar_numpr
+    from .numeracao_word import ESTILOS_TITULO, criar_lista_multinivel_titulos, criar_numpr, isolar_lista_pedidos, numeracao_do_paragrafo
 except ImportError:
+    from assinatura_local import (
+        AssinaturaLocal, ESTILO_ASSINATURA, inserir_imagem_assinatura,
+        localizar_bloco_assinatura, manter_blocos_assinatura,
+    )
     from comum import ROOT, carregar_json
-    from numeracao_word import ESTILOS_TITULO, criar_lista_multinivel_titulos, criar_numpr
+    from numeracao_word import ESTILOS_TITULO, criar_lista_multinivel_titulos, criar_numpr, isolar_lista_pedidos, numeracao_do_paragrafo
 
 PPR_LIMPAR = {"jc", "ind", "spacing", "contextualSpacing", "mirrorIndents", "adjustRightInd", "snapToGrid", "keepLines", "keepNext", "widowControl", "pBdr"}
 RPR_LIMPAR = {"rFonts", "sz", "szCs", "color", "spacing", "position", "kern", "caps", "smallCaps", "outline", "shadow", "emboss", "imprint", "fitText", "w", "snapToGrid"}
@@ -83,12 +91,10 @@ def _normalizar_titulo_literal(paragrafo) -> bool:
 
 
 def _forcar_formatacao_estrutural(paragrafo) -> None:
-    """Evita que um `bold=false` direto da origem anule o estilo em negrito."""
-    cabecalho = paragrafo.style.name in ESTILOS_CABECALHO
-    if paragrafo.style.name not in ESTILOS_TITULO and not cabecalho:
+    """Aplica negrito e caixa alta mesmo sobre formatação direta da origem."""
+    estilo = paragrafo.style.name
+    if estilo not in ESTILOS_TITULO and estilo not in ESTILOS_CABECALHO:
         return
-    for run in paragrafo._p.xpath(".//w:r"):
-        _definir_negrito(run, True)
     ppr = paragrafo._p.get_or_add_pPr()
     if ppr.find(qn("w:rPr")) is None:
         marca = OxmlElement("w:rPr")
@@ -97,18 +103,17 @@ def _forcar_formatacao_estrutural(paragrafo) -> None:
             ppr.append(marca)
         else:
             sucessor.addprevious(marca)
-    _definir_negrito(ppr, True)
-    if cabecalho:
-        # Efeito visual nativo do Word: preserva texto, campos e identificadores.
-        for elemento in [ppr, *paragrafo._p.xpath(".//w:r")]:
-            rpr = elemento.find(qn("w:rPr"))
-            for nome in ("caps", "smallCaps"):
-                for anterior in list(rpr.findall(qn(f"w:{nome}"))):
-                    rpr.remove(anterior)
-                flag = OxmlElement(f"w:{nome}")
-                flag.set(qn("w:val"), "1" if nome == "caps" else "0")
-                rpr.append(flag)
-    if paragrafo.style.name == "FB - Título Secundário":
+    # O efeito visual do Word preserva o texto e os campos da origem.
+    for elemento in [ppr, *paragrafo._p.xpath(".//w:r")]:
+        _definir_negrito(elemento, True)
+        rpr = elemento.find(qn("w:rPr"))
+        for nome, valor in (("caps", "1"), ("smallCaps", "0")):
+            for anterior in list(rpr.findall(qn(f"w:{nome}"))):
+                rpr.remove(anterior)
+            flag = OxmlElement(f"w:{nome}")
+            flag.set(qn("w:val"), valor)
+            rpr.append(flag)
+    if estilo == "FB - Título Secundário":
         paragrafo.paragraph_format.first_line_indent = Cm(1)
 
 
@@ -370,20 +375,17 @@ def _remover_negrito_direto(paragrafo) -> int:
 
 def _imagem_de_assinatura(paragrafo, indice: int, paragrafos, mapa: dict) -> bool:
     """Identifica imagem isolada imediatamente antes do bloco de assinatura."""
-    if paragrafo.text.strip() or not paragrafo._p.xpath(".//w:drawing"):
+    if paragrafo.text.strip() or not paragrafo._p.xpath(".//w:drawing | .//w:pict"):
         return False
-    textos_vistos = 0
     for proximo_indice in range(indice + 1, len(paragrafos)):
         proximo = paragrafos[proximo_indice]
         if not proximo.text.strip():
+            if proximo._p.xpath(".//w:drawing | .//w:pict"):
+                return False
             continue
-        textos_vistos += 1
         item = mapa.get(proximo_indice + 1, {})
         estilo = item.get("estilo_destino") or (proximo.style.name if proximo.style else "")
-        if estilo == "FB - Assinatura" or re.search(r"\b(?:OAB|advogad[oa]|procurador[a]?)\b", proximo.text, re.IGNORECASE):
-            return True
-        if textos_vistos >= 3:
-            return False
+        return estilo == ESTILO_ASSINATURA
     return False
 
 
@@ -391,66 +393,23 @@ def _aplicar_numpr(paragrafo, numpr) -> None:
     if numpr is None:
         return
     ppr = paragrafo._p.get_or_add_pPr()
-    existente = ppr.find(qn("w:numPr"))
-    if existente is not None:
-        ppr.remove(existente)
-    ppr.insert(0, numpr)
+    ppr.replace(ppr.get_or_add_numPr(), numpr)
 
 
 def _normalizar_numeracao_pedidos(doc) -> None:
-    """Formata os itens do pedido em I, II, III... com texto a 3 cm."""
-    numeracao = doc.part.numbering_part.element
-    num_para_abstrato = {}
-    for num in numeracao.findall(qn("w:num")):
-        abstrato = num.find(qn("w:abstractNumId"))
-        if abstrato is not None:
-            num_para_abstrato[num.get(qn("w:numId"))] = abstrato.get(qn("w:val"))
-
-    niveis_usados = set()
-    for p in doc.paragraphs:
-        if p.style.name != "FB - Pedido" or p._p.pPr is None:
+    listas = {}
+    for pedido in doc.paragraphs:
+        if pedido.style.name != "FB - Pedido":
             continue
-        numpr = p._p.pPr.find(qn("w:numPr"))
+        numpr = numeracao_do_paragrafo(pedido)
         if numpr is None:
             continue
-        numid = numpr.find(qn("w:numId"))
-        ilvl = numpr.find(qn("w:ilvl"))
-        if numid is not None:
-            niveis_usados.add((numid.get(qn("w:val")), ilvl.get(qn("w:val")) if ilvl is not None else "0"))
-
-    for numid, nivel in niveis_usados:
-        abstrato_id = num_para_abstrato.get(numid)
-        abstrato = next((x for x in numeracao.findall(qn("w:abstractNum")) if x.get(qn("w:abstractNumId")) == abstrato_id), None)
-        if abstrato is None:
-            continue
-        lvl = next((x for x in abstrato.findall(qn("w:lvl")) if x.get(qn("w:ilvl")) == nivel), None)
-        if lvl is None:
-            continue
-        formato = lvl.find(qn("w:numFmt"))
-        if formato is None:
-            formato = OxmlElement("w:numFmt")
-            lvl.insert(1, formato)
-        formato.set(qn("w:val"), "upperRoman")
-        ppr = lvl.find(qn("w:pPr"))
-        if ppr is None:
-            ppr = OxmlElement("w:pPr")
-            lvl.append(ppr)
-        ind = ppr.find(qn("w:ind"))
-        if ind is None:
-            ind = OxmlElement("w:ind")
-            ppr.append(ind)
-        ind.set(qn("w:left"), "1701")
-        ind.set(qn("w:hanging"), "425")
-        rpr = lvl.find(qn("w:rPr"))
-        if rpr is None:
-            rpr = OxmlElement("w:rPr")
-            lvl.append(rpr)
-        fontes = rpr.find(qn("w:rFonts"))
-        if fontes is None:
-            fontes = OxmlElement("w:rFonts")
-            rpr.insert(0, fontes)
-        for atributo in ("ascii", "hAnsi", "eastAsia", "cs"):
-            fontes.set(qn(f"w:{atributo}"), "Segoe UI Variable Text")
+        original = numpr.numId.val
+        if original not in listas:
+            listas[original] = isolar_lista_pedidos(doc, original)
+        if listas[original] is not None:
+            nivel = numpr.ilvl.val if numpr.ilvl is not None else 0
+            _aplicar_numpr(pedido, criar_numpr(listas[original], nivel))
 
 
 def _estabilizar_papel_timbrado(caminho: Path) -> None:
@@ -599,7 +558,10 @@ def _completar_papel_timbrado(doc, modelo) -> dict:
     return contagem
 
 
-def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict, saida: Path) -> dict:
+def aplicar(
+    entrada: Path, modelo: Path, classificacao: dict, configuracao: dict, saida: Path,
+    *, assinatura: AssinaturaLocal | None = None,
+) -> dict:
     permitidos = set(configuracao["estilos_permitidos"])
     padrao = configuracao["estilo_padrao"]
     mapa = {x["id"]: x for x in classificacao["classificacoes"]}
@@ -608,6 +570,9 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
         estagiado = Path(tmp) / "com_estilos.docx"
         _importar_estilos(modelo, entrada, estagiado)
         doc = Document(estagiado)
+        bloco_assinatura = localizar_bloco_assinatura(doc, assinatura) if assinatura is not None else ()
+        elementos_assinatura = {paragrafo._p for paragrafo in bloco_assinatura}
+        paragrafos_assinatura_local = []
         for nome in ESTILOS_CABECALHO:
             fonte = doc.styles[nome].font
             fonte.bold = fonte.cs_bold = fonte.all_caps = True
@@ -623,10 +588,13 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
             if estilo not in permitidos:
                 alertas.append({"paragrafo": i, "alerta": f"Estilo não autorizado: {estilo}; aplicado {padrao}"})
                 estilo = padrao
-            if item.get("confianca", 0) < 0.80 and p.text.strip():
+            if p._p in elementos_assinatura:
+                estilo = ESTILO_ASSINATURA
+                paragrafos_assinatura_local.append(i)
+            elif item.get("confianca", 0) < 0.80 and p.text.strip():
                 alertas.append({"paragrafo": i, "alerta": "Baixa confiança; aplicado estilo padrão provisório"})
                 estilo = padrao
-            imagem_isolada = not p.text.strip() and bool(p._p.xpath(".//w:drawing"))
+            imagem_isolada = not p.text.strip() and bool(p._p.xpath(".//w:drawing | .//w:pict"))
             imagem_assinatura = (
                 configuracao.get("regras", {}).get("FB - Assinatura", {}).get("centralizar_imagem", False)
                 and _imagem_de_assinatura(p, i - 1, paragrafos, mapa)
@@ -634,7 +602,14 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
             if imagem_assinatura:
                 estilo = "FB - Assinatura"
                 imagens_assinatura_centralizadas += 1
-            numpr = criar_numpr(num_id_titulos, ESTILOS_TITULO[estilo]) if estilo in ESTILOS_TITULO else None
+            numpr = None
+            if estilo in ESTILOS_TITULO:
+                numpr = criar_numpr(num_id_titulos, ESTILOS_TITULO[estilo])
+            elif estilo in ESTILOS_CABECALHO | {ESTILO_ASSINATURA}:
+                if p._p.pPr is not None and p._p.pPr.numPr is not None:
+                    p._p.pPr.remove(p._p.pPr.numPr)
+            elif estilo in {"FB - Lista", "FB - Pedido"}:
+                numpr = copy.deepcopy(numeracao_do_paragrafo(p))
             normalizacoes_markdown += int(_normalizar_markdown_paragrafo(p, estilo))
             limpezas += _limpar_direta(p, preservar_alinhamento=imagem_isolada)
             p.style = doc.styles[estilo]
@@ -651,14 +626,14 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
         tabelas_markdown_convertidas = _converter_tabelas_markdown(doc)
         assinaturas_em_tabela = vazios_antes_assinatura_removidos = 0
         for tabela in doc.tables:
-            assinatura = _tabela_de_assinatura(tabela)
-            if assinatura:
+            tabela_assinatura = _tabela_de_assinatura(tabela)
+            if tabela_assinatura:
                 vazios_antes_assinatura_removidos += _remover_vazios_antes_da_tabela(tabela)
             for p in _paragrafos_tabelas([tabela]):
                 limpezas += _limpar_direta(p)
-                estilo_tabela = "FB - Assinatura" if assinatura else "FB - Tabela"
+                estilo_tabela = ESTILO_ASSINATURA if tabela_assinatura else "FB - Tabela"
                 p.style = doc.styles[estilo_tabela]
-                if assinatura:
+                if tabela_assinatura:
                     assinaturas_em_tabela += 1
                 contagem[estilo_tabela] = contagem.get(estilo_tabela, 0) + 1
         # Completa o timbre do modelo onde a entrada Word não o possui.
@@ -672,6 +647,12 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
                 negritos_qualificacao += _normalizar_negrito_qualificacao(p)
         _normalizar_numeracao_pedidos(doc)
         _finalizar_blocos_de_resumo(doc.paragraphs)
+        assinatura_local_inserida = bool(
+            assinatura is not None and bloco_assinatura and inserir_imagem_assinatura(bloco_assinatura, assinatura)
+        )
+        if assinatura_local_inserida:
+            contagem[ESTILO_ASSINATURA] = contagem.get(ESTILO_ASSINATURA, 0) + 1
+        manter_blocos_assinatura(doc)
         doc.save(saida)
         _estabilizar_papel_timbrado(saida)
     return {
@@ -683,6 +664,8 @@ def aplicar(entrada: Path, modelo: Path, classificacao: dict, configuracao: dict
         "formatacoes_diretas_removidas": limpezas,
         "negritos_qualificacao_ajustados": negritos_qualificacao,
         "imagens_assinatura_centralizadas": imagens_assinatura_centralizadas,
+        "assinatura_local_inserida": assinatura_local_inserida,
+        "paragrafos_assinatura_local": paragrafos_assinatura_local,
         "imagens_gerais_centralizadas": imagens_gerais_centralizadas,
         "negritos_corpo_removidos": negritos_corpo_removidos,
         "normalizacoes_markdown": normalizacoes_markdown,

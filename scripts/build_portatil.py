@@ -124,7 +124,6 @@ def main() -> None:
                     str(entrada_word),
                     "--saida",
                     str(saida_teste),
-                    "--sem-pdf",
                     "--silencioso",
                 ],
                 cwd=pacote,
@@ -136,12 +135,11 @@ def main() -> None:
             raise RuntimeError(
                 "O executável foi criado, mas o teste de DOCX e Markdown não terminou em 90 segundos."
             ) from exc
-        saidas_docx = list(saida_teste.rglob("*_formatada.docx"))
+        saidas = list(saida_teste.iterdir()) if saida_teste.is_dir() else []
         if (
             teste.returncode != 0
-            or len(saidas_docx) < 3
-            or not any(saida_teste.rglob("entrada_intermediaria.docx"))
-            or not any(saida_teste.rglob("manifesto_entrada.json"))
+            or len(saidas) != 3
+            or any(not arquivo.is_file() or arquivo.suffix != ".docx" for arquivo in saidas)
         ):
             raise RuntimeError(
                 "O executável foi criado, mas não passou no teste automático de DOCX e Markdown."
@@ -151,6 +149,9 @@ def main() -> None:
         if len(saidas_word) != 1:
             raise RuntimeError("O executável não produziu o Word de controle do papel timbrado.")
         word_final = Document(saidas_word[0])
+        idioma, = word_final.styles.element.xpath("w:docDefaults//w:lang")
+        if idioma.get(qn("w:val")) != "pt-BR":
+            raise RuntimeError("O executável não aplicou português do Brasil como idioma de revisão.")
         cabecalho = word_final.sections[0].header
         imagens_timbre = cabecalho._element.xpath(".//a:blip")
         if not imagens_timbre:
@@ -171,12 +172,12 @@ def main() -> None:
         print("Margens e distâncias de cabeçalho/rodapé iguais às do modelo oficial.")
         for indice, estilo in ((1, "FB - Título Principal"), (2, "FB - Título Secundário")):
             titulo = word_final.paragraphs[indice]
-            if titulo.style.name != estilo or not all(run.bold for run in titulo.runs):
-                raise RuntimeError("O executável não garantiu o negrito dos títulos.")
+            if titulo.style.name != estilo or not all(run.bold and run.font.all_caps for run in titulo.runs):
+                raise RuntimeError("O executável não garantiu o negrito e a caixa alta dos títulos.")
         subtitulo_final = word_final.paragraphs[2]
         if abs(subtitulo_final.paragraph_format.first_line_indent.cm - 1) > 0.01:
             raise RuntimeError("O executável não aplicou primeira linha de 1 cm ao subtítulo.")
-        print("Títulos em negrito e subtítulo com primeira linha de 1 cm validados.")
+        print("Títulos em negrito e caixa alta e subtítulo com primeira linha de 1 cm validados.")
         for indice, estilo in ((3, "FB - Endereçamento"), (4, "FB - Identificação do Processo")):
             paragrafo = word_final.paragraphs[indice]
             if paragrafo.style.name != estilo or not all(

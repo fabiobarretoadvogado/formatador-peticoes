@@ -47,6 +47,23 @@ class IdentificacaoProcessoTests(unittest.TestCase):
             with self.subTest(texto=texto):
                 self.assertEqual(classificar_um(self.paragrafo(texto))["estilo_destino"], "FB - Identificação do Processo")
 
+    def test_numero_no_bloco_de_abertura_e_precedentes_na_fundamentacao(self):
+        linhas = [
+            "AO _ JUIZADO ESPECIAL FEDERAL DA SEÇÃO JUDICIÁRIA DE PERNAMBUCO",
+            "Processo nº 202500123456 / " + NUMERO,
+            "Dos fundamentos",
+            "1ª VT de Aracaju – Processo nº " + NUMERO + " – dj. 28/01/2026;",
+            "Processo nº " + NUMERO,
+        ]
+        estrutura = {"documento": "amostra", "paragrafos": [
+            {"id": i, "texto": texto, "posicao_relativa": 0.03 * i,
+             "estilo_original": "Heading 1" if i == 3 else "Normal"}
+            for i, texto in enumerate(linhas, 1)
+        ]}
+        estilos = [item["estilo_destino"] for item in classificar(estrutura)["classificacoes"]]
+        self.assertEqual(estilos[:3], ["FB - Endereçamento", "FB - Identificação do Processo", "FB - Título Principal"])
+        self.assertNotIn("FB - Identificação do Processo", estilos[3:])
+
     def test_docx_aplica_identificacao_e_preserva_numero_e_original(self):
         from docx import Document
         from scripts.aplicar_estilos import aplicar

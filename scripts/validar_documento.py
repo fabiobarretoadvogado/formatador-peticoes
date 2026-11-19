@@ -8,11 +8,15 @@ from pathlib import Path
 from docx import Document
 
 try:
-    from .classificar_regras import RE_ASSINATURA, RE_PROCESSO, parece_qualificacao
+    from .assinatura_local import ESTILO_ASSINATURA, parece_linha_oab
+    from .classificar_regras import classificar, parece_qualificacao
     from .comum import ROOT, agora_iso, carregar_json, salvar_json
+    from .extrair_documento import extrair
 except ImportError:
-    from classificar_regras import RE_ASSINATURA, RE_PROCESSO, parece_qualificacao
+    from assinatura_local import ESTILO_ASSINATURA, parece_linha_oab
+    from classificar_regras import classificar, parece_qualificacao
     from comum import ROOT, agora_iso, carregar_json, salvar_json
+    from extrair_documento import extrair
 
 
 def _todos_paragrafos(doc):
@@ -40,13 +44,15 @@ def validar(docx: Path, config: dict, aplicacao: dict | None = None) -> dict:
     problemas, estilos = [], Counter()
     paragrafos_corpo = doc.paragraphs
     total_corpo = max(1, len(paragrafos_corpo))
-    for indice, p in enumerate(paragrafos_corpo):
-        texto = " ".join(p.text.split())
+    classificacoes = classificar(extrair(docx))["classificacoes"]
+    for indice, (p, item) in enumerate(zip(paragrafos_corpo, classificacoes)):
+        texto = item["texto"]
         if not texto:
             continue
         estilo = p.style.name if p.style else None
         referencia = f"corpo:{indice + 1}"
-        if RE_PROCESSO.search(texto) and len(texto.split()) <= 16 and estilo != "FB - Identificação do Processo":
+        esperado = item["estilo_destino"]
+        if estilo != esperado and "FB - Identificação do Processo" in {estilo, esperado}:
             problemas.append({
                 "severidade": "erro",
                 "paragrafo": referencia,
@@ -59,30 +65,18 @@ def validar(docx: Path, config: dict, aplicacao: dict | None = None) -> dict:
                 "paragrafo": referencia,
                 "codigo": "qualificacao_com_estilo_citacao",
             })
-        if (
-            indice / total_corpo >= 0.70
-            and len(texto.split()) <= 18
-            and RE_ASSINATURA.search(texto)
-            and estilo != "FB - Assinatura"
-        ):
+        if esperado == "FB - Endereçamento" and estilo != esperado:
             problemas.append({
                 "severidade": "erro",
                 "paragrafo": referencia,
-                "codigo": "assinatura_com_estilo_incorreto",
+                "codigo": "enderecamento_com_estilo_incorreto",
                 "detalhe": estilo,
             })
-        if estilo in {"FB - Título Principal", "FB - Título Secundário"} and indice / total_corpo >= 0.70:
-            seguinte = next(
-                (" ".join(paragrafos_corpo[j].text.split()) for j in range(indice + 1, len(paragrafos_corpo)) if paragrafos_corpo[j].text.strip()),
-                "",
-            )
-            if 2 <= len(texto.split()) <= 10 and RE_ASSINATURA.search(seguinte):
-                problemas.append({
-                    "severidade": "erro",
-                    "paragrafo": referencia,
-                    "codigo": "nome_assinatura_com_estilo_incorreto",
-                    "detalhe": estilo,
-                })
+        if esperado == ESTILO_ASSINATURA and estilo != esperado:
+            codigo = "assinatura_com_estilo_incorreto" if parece_linha_oab(texto) else "nome_assinatura_com_estilo_incorreto"
+            problemas.append({
+                "severidade": "erro", "paragrafo": referencia, "codigo": codigo, "detalhe": estilo,
+            })
     vazios = 0
     for i, p in _todos_paragrafos(doc):
         estilo = p.style.name if p.style else None

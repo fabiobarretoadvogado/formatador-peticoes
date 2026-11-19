@@ -1,4 +1,3 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,25 +62,23 @@ class PortableLauncherTests(unittest.TestCase):
             documento.add_paragraph("Diante do exposto, requer o regular prosseguimento.")
             documento.save(entrada)
             original = entrada.read_bytes()
+            destino = raiz / "resultados"
+            destino.mkdir()
+            anterior = destino / "Petição de teste_formatada.docx"
+            anterior.write_bytes(original)
 
             resultado = processar_arquivo(
                 entrada,
-                raiz / "resultados",
-                gerar_pdf=False,
+                destino,
                 modelos_raiz=ROOT / "modelos",
                 execucoes_raiz=raiz / "execucoes_locais",
             )
 
             self.assertEqual(entrada.read_bytes(), original)
             self.assertTrue(resultado.docx.is_file())
-            self.assertTrue(resultado.relatorio.is_file())
-            self.assertIsNone(resultado.pdf)
-            self.assertTrue((resultado.pasta_resultado / "auditoria.json").is_file())
-            self.assertTrue((resultado.pasta_resultado / "resultado_execucao.json").is_file())
-            resumo = json.loads(
-                (resultado.pasta_resultado / "resultado_execucao.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(resumo["tipo_peca"], "peticao_inicial")
+            self.assertEqual(resultado.docx, destino / "Petição de teste_formatada_2.docx")
+            self.assertEqual(set(destino.iterdir()), {anterior, resultado.docx})
+            self.assertFalse(list(resultado.execucao_local.rglob("*.json")))
             self.assertTrue(resultado.execucao_local.is_dir())
 
             dados = carregar_dados_revisao(resultado)
@@ -104,14 +101,12 @@ class PortableLauncherTests(unittest.TestCase):
             self.assertEqual(revisado.pasta_resultado, resultado.pasta_resultado)
             self.assertEqual(revisado.ambiguos, 0)
             self.assertTrue(revisado.aprovado)
-            self.assertFalse((revisado.pasta_resultado / "pendencias_semanticas.json").exists())
-            resumo_revisado = json.loads(
-                (revisado.pasta_resultado / "resultado_execucao.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(resumo_revisado["pendencias_semanticas"], 0)
-            self.assertTrue(resumo_revisado["aprovado"])
+            self.assertEqual(revisado.docx, resultado.docx)
+            self.assertEqual(set(destino.iterdir()), {anterior, revisado.docx})
+            self.assertEqual(anterior.read_bytes(), original)
+            self.assertFalse(list(revisado.execucao_local.rglob("*.json")))
 
-    def test_markdown_publica_manifesto_e_reutiliza_o_mesmo_intermediario_na_revisao(self):
+    def test_markdown_reutiliza_o_mesmo_intermediario_na_revisao(self):
         with tempfile.TemporaryDirectory() as temporario:
             raiz = Path(temporario)
             entrada = raiz / "Petição de teste.md"
@@ -125,7 +120,6 @@ class PortableLauncherTests(unittest.TestCase):
             resultado = processar_arquivo(
                 entrada,
                 raiz / "resultados",
-                gerar_pdf=False,
                 modelos_raiz=ROOT / "modelos",
                 execucoes_raiz=raiz / "execucoes_locais",
             )
@@ -133,8 +127,8 @@ class PortableLauncherTests(unittest.TestCase):
             self.assertEqual(resultado.formato_original, "markdown")
             self.assertTrue(resultado.entrada_pipeline.is_file())
             self.assertEqual(resultado.entrada_pipeline, resultado.docx_intermediario)
-            self.assertTrue((resultado.pasta_resultado / "entrada_intermediaria.docx").is_file())
-            self.assertTrue((resultado.pasta_resultado / "manifesto_entrada.json").is_file())
+            self.assertEqual(list(resultado.docx.parent.iterdir()), [resultado.docx])
+            self.assertTrue(resultado.metadados_entrada["auditoria_conteudo"]["aprovada"])
             intermediario_antes = resultado.entrada_pipeline.read_bytes()
 
             dados = carregar_dados_revisao(resultado)
@@ -149,11 +143,9 @@ class PortableLauncherTests(unittest.TestCase):
             ])
             self.assertEqual(revisado.entrada_pipeline, resultado.entrada_pipeline)
             self.assertEqual(revisado.entrada_pipeline.read_bytes(), intermediario_antes)
-            resumo = json.loads(
-                (revisado.pasta_resultado / "resultado_execucao.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(resumo["formato_original"], "markdown")
-            self.assertEqual(resumo["pendencias_semanticas"], 0)
+            self.assertEqual(revisado.formato_original, "markdown")
+            self.assertEqual(revisado.ambiguos, 0)
+            self.assertEqual(list(revisado.docx.parent.iterdir()), [revisado.docx])
 
 
 if __name__ == "__main__":

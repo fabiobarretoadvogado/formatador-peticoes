@@ -7,7 +7,7 @@ Pipeline local e auditável para aplicar exclusivamente os estilos oficiais do e
 Baixe `FormatadorPeticoes-Setup.exe` na seção **Releases** do repositório e execute
 o instalador. O aplicativo instala para o usuário atual, cria um atalho no menu
 Iniciar e pode ser removido pelas configurações do Windows. Não é necessário
-instalar Python. O Microsoft Word é necessário para exportar PDF.
+instalar Python.
 
 O instalador e o pacote portátil incluem apenas o programa, bibliotecas, o modelo
 oficial vazio e as regras de estilos. Documentos de clientes, execuções anteriores,
@@ -82,27 +82,28 @@ Uma petição Markdown UTF-8 usa o mesmo comando:
 python scripts/pipeline.py entrada/peticao_original.md
 ```
 
-Para testar sem exportar o PDF:
+Para indicar outra pasta de destino:
 
 ```powershell
-python scripts/pipeline.py entrada/peticao_original.docx --skip-pdf
+python scripts/pipeline.py entrada/peticao_original.docx --saida "C:\Documentos"
 ```
 
-O resultado fica em:
+O Word formatado fica diretamente na pasta de destino. Por padrão, o destino
+é a pasta da entrada. Arquivos com o mesmo nome recebem um sufixo numérico.
+O idioma de revisão do Word é português do Brasil, inclusive quando o DOCX de
+origem traz marcações de revisão em inglês.
 
-- `saida/peticao_formatada.docx`
-- `saida/peticao_formatada.pdf`
-- `saida/relatorio_formatacao.md`
-
-Os JSONs de trabalho e a cópia de segurança ficam em `trabalho/`.
-Para entradas Markdown, essa pasta também recebe `entrada_intermediaria.docx` e
-`manifesto_entrada.json`, com os hashes da origem e do intermediário, versão do
-parser, imagens incorporadas e resultado da auditoria estrutural da conversão.
-
-O pipeline exige `modelos/modelo_oficial.docx` e `modelos/estilos.json` na pasta
-da execução. Se qualquer um deles estiver ausente, o processamento é interrompido
+O pipeline exige `modelos/modelo_oficial.docx` e `modelos/estilos.json`.
+Se qualquer um deles estiver ausente, o processamento é interrompido
 com uma mensagem de recuperação. O sistema nunca cria nem substitui silenciosamente
 o modelo oficial ou suas regras.
+
+## Usar no ChatGPT
+
+O [servidor MCP do FormatadorPeticoes](MCP_CHATGPT.md) recebe texto Markdown ou
+uma petição inicial anexada em DOCX ou Markdown. Ele usa o modelo oficial do
+escritório e entrega o Word formatado. Eventuais pendências aparecem no painel.
+O guia descreve a instalação e a conexão pelo túnel privado da OpenAI.
 
 ## Aplicativo portátil para a equipe
 
@@ -117,18 +118,15 @@ Na versão portátil:
   e abrir os resultados;
 - trechos de classificação duvidosa são mostrados com o parágrafo anterior e
   o seguinte, para confirmação sem editar arquivos técnicos;
-- cada execução intermediária fica em `%LOCALAPPDATA%\FormatadorPeticoes`;
-- o DOCX, o PDF, o relatório, a auditoria e eventuais pendências são copiados
-  para a pasta de resultados; entradas Markdown incluem ainda o manifesto e o
-  DOCX intermediário utilizados;
-- o modelo e as regras ficam em `versoes/<versão>/modelos`, junto da versão correspondente;
-- o Word continua sendo necessário somente para a geração do PDF.
+- somente o DOCX final é gravado diretamente na pasta escolhida;
+- o processamento usa documentos temporários e mantém a auditoria em memória;
+- o modelo e as regras ficam em `versoes/<versão>/modelos`, junto da versão correspondente.
 
 Na tela de revisão, a sugestão automática, a confiança e a descrição da função
 do estilo aparecem juntas. A conclusão só é liberada depois que todas as
 pendências forem confirmadas. A aplicação rejeita respostas antigas se o texto
-do parágrafo tiver mudado. Ao final, a interface permite abrir diretamente o
-DOCX, o PDF, o relatório técnico ou a pasta do documento.
+do parágrafo tiver mudado. Ao final, a interface permite abrir o DOCX ou a pasta
+em que ele foi salvo.
 
 O pacote oficial inclui o runtime Tcl/Tk e, ao abrir o EXE sem argumentos, deve
 exibir sempre a interface completa. O seletor nativo do Windows permanece apenas
@@ -219,55 +217,33 @@ Nos estilos regulares (`FB - Corpo`, `FB - Corpo com Recuo`, `FB - Citação`, `
 
 Tópicos e subtópicos recebem 36 pt de espaço anterior: os 12 pt normais mais 24 pt equivalentes a uma linha de parágrafo separando-os do bloco anterior. A identificação da ação permanece com 12 pt antes e 12 pt depois.
 
-O endereçamento e a identificação do processo ficam sempre em negrito e caixa alta, inclusive quando a origem contém trechos em minúsculas ou com negrito desativado. A caixa alta usa o efeito nativo do Word, preservando o texto e os campos originais.
+O endereçamento e a identificação do processo ficam sempre em negrito e caixa alta. O formatador reconhece destinatários como juizados, varas e presidências de tribunais e procura a identificação dos próprios autos no bloco de abertura. Referências a outros processos seguem a formatação da fundamentação. A caixa alta usa o efeito nativo do Word e preserva o texto e os campos originais.
 
 Os títulos usam uma única lista multinível nativa do Word: `FB - Título Principal` gera `1`, `2`, `3`; `FB - Título Secundário` gera `1.1`, `1.2`, `2.1`. Número e texto ficam em 12 pt e em negrito. Prefixos digitados, como `2.` ou `II.`, são retirados ao vincular o título à lista, evitando combinações duplicadas como `II. 2.`.
 
 Os subtítulos mantêm recuo esquerdo de 1 cm e especial **Primeira linha: 1 cm**.
 O estilo, o parágrafo e a numeração usam a mesma definição, sem deslocamento.
-Títulos e subtítulos ficam integralmente em negrito, inclusive números e trechos
-que tenham vindo com negrito desativado na origem.
+Títulos e subtítulos aparecem em caixa alta no Word e ficam integralmente em
+negrito, inclusive quando a origem usa minúsculas ou desativa o negrito.
 
-No bloco final de pedidos, a frase introdutória (por exemplo, “Diante do exposto, requer-se...”) usa `FB - Corpo`. Somente os itens numerados em algarismos romanos (`I`, `II`, `III`...) usam `FB - Pedido` e o recuo de 3 cm.
+No bloco final de pedidos, a frase introdutória (por exemplo, “Diante do exposto, requer-se...”) usa `FB - Corpo`. Os itens numerados usam `FB - Pedido`. Os pedidos principais em listas nativas do Word usam algarismos romanos com recuo de 3 cm. Os subitens mantêm os níveis e marcadores da origem.
 
-Os estilos estruturais de origem `Heading 1`/`Título 1` e `Heading 2`/`Título 2` prevalecem sobre heurísticas textuais. Assim, a numeração principal permanece sequencial (`1`, `2`, `3`...) e a secundária se comunica com ela (`3.1`, `3.2`...), sempre na fonte oficial.
+Os estilos estruturais de origem `Heading 1`/`Título 1`, `Heading 2`/`Título 2` e os dois estilos de título `FB` preservam o nível da seção. A numeração principal permanece sequencial (`1`, `2`, `3`...) e a secundária acompanha a principal (`3.1`, `3.2`...), sempre na fonte oficial.
 
 ## Qualificação, ação e notas de rodapé
 
 - `FB - Qualificação das Partes`: texto inicial que identifica autor, réu e representação; deixa em negrito apenas nomes de pessoas, entidades, ações e fases processuais.
 - `FB - Identificação da Ação`: denominação centralizada da demanda, entre a qualificação da parte autora e a apresentação da parte ré.
-- `FB - Assinatura`: centraliza também a imagem isolada que antecede o bloco de assinatura.
+- `FB - Assinatura`: centraliza a imagem isolada, o nome e a inscrição profissional e mantém o conjunto na mesma página.
 - O bloco final de data, assinatura, nome e OAB usa `FB - Fechamento`/`FB - Assinatura` sem espaçamento antes ou depois dos parágrafos.
 - `FB - Nota de Rodapé`: aplica a fonte oficial em 10 pt às notas; no Word, use esse estilo no texto da nota, não no marcador numérico.
 
 ## Revisão semântica assistida
 
-O classificador por regras envia todo item abaixo de 95% de confiança para `trabalho/solicitacoes_semanticas.json`. Uma resposta aceita tem este formato:
-
-```json
-{
-  "classificacoes": [
-    {
-      "id": 12,
-      "hash": "hash SHA-256 informado na solicitação",
-      "estilo_destino": "FB - Título Secundário",
-      "confianca": 0.98,
-      "justificativa": "Introduz nova subseção argumentativa"
-    }
-  ]
-}
-```
-
-Reexecute:
-
-```powershell
-python scripts/pipeline.py entrada/peticao_original.docx --semantica trabalho/respostas_semanticas.json
-```
-
-Na interface, a revisão de uma origem Markdown reutiliza exatamente o mesmo
-DOCX intermediário e o mesmo manifesto, preservando os hashes da classificação.
-
-Somente estilos autorizados são aceitos. Respostas semânticas com confiança de até 0,90 não substituem a regra. O `hash` deve ser exatamente o mesmo recebido em `solicitacoes_semanticas.json`; respostas antigas são ignoradas caso o texto tenha mudado. No aplicativo, essa revisão é feita pela tela, sem editar JSON manualmente.
+O classificador mostra as pendências na tela de revisão. São aceitos somente
+estilos autorizados e decisões referentes ao mesmo texto. Para uma entrada
+Markdown, a revisão reutiliza o DOCX intermediário da sessão e atualiza
+o mesmo Word de destino.
 
 ## Limites da versão inicial
 
@@ -277,7 +253,6 @@ Somente estilos autorizados são aceitos. Respostas semânticas com confiança d
 - Todas as seções recebem as margens, medianiz e distâncias de cabeçalho/rodapé do modelo oficial. No modelo incluído: superior 3 cm, inferior 2,75 cm e laterais 2 cm. O tamanho da página, a orientação e as quebras de seção são preservados.
 - Em entradas Markdown, aplicam-se estritamente os recursos declarados no perfil acima; notas de rodapé, HTML e posicionamento flutuante não são inferidos.
 - O modelo incluído é um ponto de partida técnico. A fonte de verdade deve ser validada e, se necessário, substituída pelo modelo aprovado no Word.
-- O PDF requer Microsoft Word e `pywin32`. Falhas de exportação são registradas sem apagar o DOCX e o relatório.
 - A revisão visual final continua obrigatória antes do uso jurídico.
 
 ## Testes

@@ -5,11 +5,18 @@ import re
 from pathlib import Path
 
 try:
+    from .assinatura_local import parece_linha_oab, parece_nome_signatario
     from .comum import ROOT, TIPO_PECA_SUPORTADO, carregar_json, salvar_json
 except ImportError:
+    from assinatura_local import parece_linha_oab, parece_nome_signatario
     from comum import ROOT, TIPO_PECA_SUPORTADO, carregar_json, salvar_json
 
 RE_ENDERECAMENTO = re.compile(r"^\s*(excelent[ií]ssim[oa]|merit[ií]ssim[oa]|ao\s+ju[ií]zo|[àa]o\s+excelent[ií]ssim)", re.I)
+RE_DESTINATARIO = re.compile(
+    r"^(?:ao|à|a)\s+(?:(?:_+|\d+\s*[ºªo])\s+)?"
+    r"(?:ju[ií]zado|vara|tribunal|turma|c[aâ]mara|(?:ju[ií]z[ao]|presidente|relator[a]?)\s+d[ao])\b",
+    re.I,
+)
 RE_VOCATIVO_ORGAO = re.compile(
     r"^(?:(?:ao|[àa])\s+)?(?:egr[eé]gi[oa]|colend[oa]|em[eé]rit[oa])\s+(?P<orgao>.+?)\s*[.:!]?\s*$",
     re.I,
@@ -17,19 +24,18 @@ RE_VOCATIVO_ORGAO = re.compile(
 RE_ORGAO_JUDICIAL = re.compile(r"\b(?:tribunal|turma|c[aâ]mara|ju[ií]zo)\b", re.I)
 RE_ORGAO_EM_NARRATIVA = re.compile(
     r"\b(?:decidiu|decide|entendeu|entende|reconheceu|reconhece|assentou|firmou|julgou|"
-    r"julga|determinou|determina|compete|conforme|segundo|ac[oó]rd[aã]o)\b", re.I,
+    r"julga|determinou|determina|compete|conforme|segundo|ac[oó]rd[aã]o|foi|foram|remeteu)\b", re.I,
 )
+NUMERO_CNJ = r"[0-9]{7}-[0-9]{2}\.[0-9]{4}\.[0-9]\.[0-9]{2}\.[0-9]{4}"
+NUMERO_PROCESSO = rf"(?:{NUMERO_CNJ}|[0-9]{{5,20}})"
 RE_PROCESSO = re.compile(
-    r"\b(?:processo|autos|proc\.?)\s*(?:n\s*(?:\.\s*)?[º°o]?\s*)?(?:[:.-]?\s*)\d",
+    rf"(?:processo(?:\s+de\s+origem|\s+origin[aá]rio)?|autos|proc\.?)\s*(?:n\s*\.?\s*[º°o]?\s*)?[:–-]?\s*"
+    rf"{NUMERO_PROCESSO}(?:\s*[/–-]\s*{NUMERO_PROCESSO})?\s*\.?",
     re.I,
 )
-RE_NUMERO_UNICO = re.compile(
-    r"^n[uú]mero\s+[uú]nico\s*:\s*[0-9]{7}-[0-9]{2}\.[0-9]{4}\.[0-9]\.[0-9]{2}\.[0-9]{4}$",
-    re.I,
-)
-RE_PEDIDO = re.compile(r"^\s*(ante\s+o\s+exposto|diante\s+do\s+exposto|requer(?:-se)?|pede\s+deferimento|dos\s+pedidos)\b", re.I)
+RE_NUMERO_UNICO = re.compile(rf"n[uú]mero\s+[uú]nico\s*:\s*{NUMERO_CNJ}", re.I)
+RE_PEDIDO = re.compile(r"^\s*(ante\s+o\s+exposto|diante\s+do\s+exposto|pelo\s+exposto|requer(?:-se)?)\b", re.I)
 RE_FECHAMENTO = re.compile(r"\b(termos em que|pede deferimento|nestes termos)\b", re.I)
-RE_DATA = re.compile(r"\b\d{1,2}\s+de\s+[a-zç]+\s+de\s+\d{4}\b", re.I)
 DATA_ENCERRAMENTO = (
     r"(?:\d{1,2}(?:º)?\s+de\s+"
     r"(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)"
@@ -64,7 +70,10 @@ RE_MARKDOWN_TITULO_TERCIARIO = re.compile(r"^\s*####\s+")
 RE_MARKDOWN_CITACAO = re.compile(r"^\s*>\s?")
 RE_MARKDOWN_TABELA = re.compile(r"^\s*\|.*\|\s*$")
 RE_BLOCO_PEDIDOS = re.compile(
-    r"^\s*(?:##\s+)?(?:(?:\d+(?:\.\d+)*|[ivxlcdm]+)(?:[.)]\s+|\s*[-–—:]\s+))?(?:dos\s+)?pedidos\b", re.I,
+    r"(?:#{2,4}\s+)?(?:(?:\d+(?:\.\d+)*|[ivxlcdm]+)[.)]?\s*(?:[-–—:]\s*)?\s+)?"
+    r"(?:(?:dos?\s+)?pedidos?(?:\s+e\s+(?:dos?\s+)?requerimentos?)?|"
+    r"(?:dos?\s+)?requerimentos?)(?:\s+finais?)?\s*:?",
+    re.I,
 )
 RE_TITULO_ENUMERADO = re.compile(
     r"^(?P<numero>(?:\d{1,3}|[IVXLCDM]+)(?:\.\d{1,3})*)(?:[.)]?\s*[-–—:]\s+|[.)]?\s+)(?P<titulo>\S.*)$", re.I,
@@ -88,6 +97,18 @@ RE_VERBO_PROSA = re.compile(
     r"preenche|preenchem|verifica-se|observa-se|trata-se)\b", re.I,
 )
 RE_ROTULO_INFORMATIVO = re.compile(r"^(?:descri[cç][aã]o|fonte|nota)\s*:", re.I)
+ESTILOS_CITACAO = {"quote", "citação", "citacao", "fb - citação"}
+TITULOS_ORIGEM = {
+    "heading 1": "FB - Título Principal",
+    "título 1": "FB - Título Principal",
+    "titulo 1": "FB - Título Principal",
+    "fb - título principal": "FB - Título Principal",
+    "heading 2": "FB - Título Secundário",
+    "título 2": "FB - Título Secundário",
+    "titulo 2": "FB - Título Secundário",
+    "fb - título secundário": "FB - Título Secundário",
+}
+TITULOS = frozenset(TITULOS_ORIGEM.values())
 
 
 def _caixa_alta(texto: str) -> bool:
@@ -105,6 +126,16 @@ def parece_vocativo_orgao(texto: str) -> bool:
         and RE_ORGAO_JUDICIAL.search(orgao)
         and not re.search(r"[,;:!?]", orgao)
         and not RE_ORGAO_EM_NARRATIVA.search(orgao)
+    )
+
+
+def parece_enderecamento(texto: str) -> bool:
+    destinatario = texto.rstrip(" .,:")
+    return parece_vocativo_orgao(texto) or bool(
+        len(destinatario.split()) <= 32
+        and (RE_ENDERECAMENTO.search(destinatario) or RE_DESTINATARIO.search(destinatario))
+        and not re.search(r"[,;:!?]", destinatario)
+        and not RE_ORGAO_EM_NARRATIVA.search(destinatario)
     )
 
 
@@ -173,28 +204,27 @@ def parece_fechamento_local_data(p: dict, texto: str, anterior: str = "", seguin
 
 
 def parece_nome_assinatura(p: dict, texto: str, anterior: str = "", seguinte: str = "") -> bool:
-    palavras = texto.split()
-    alinhamento = str(p.get("alinhamento") or "")
-    vizinho_assinatura = RE_ASSINATURA.search(anterior) or RE_ASSINATURA.search(seguinte)
-    nome_antes_oab = bool(re.match(r"^\s*OAB(?:/\w+)?\b", seguinte, re.I)) and all(
-        palavra.casefold() in {"de", "da", "do", "das", "dos", "e"}
-        or (palavra.isalpha() and palavra[0].isupper())
-        for palavra in palavras
-    )
+    nome, quebra, oab = p.get("texto", texto).strip().partition("\n")
     return bool(
-        p.get("posicao_relativa", 0) >= (0.50 if nome_antes_oab else 0.70)
-        and 2 <= len(palavras) <= 10
-        and (p.get("negrito") or alinhamento.endswith("CENTER (1)") or nome_antes_oab)
-        and vizinho_assinatura
-        and not RE_FECHAMENTO.search(texto)
-        and not RE_DATA.search(texto)
+        parece_nome_signatario(nome)
+        and not RE_NOME_SECAO.search(nome)
+        and parece_linha_oab(oab if quebra else seguinte)
+        and (
+            p.get("posicao_relativa", 0) >= 0.50
+            or (p.get("estilo_original") or "").casefold() == "fb - assinatura"
+            or parece_fechamento_local_data(p, anterior)
+            or RE_FECHAMENTO.search(anterior)
+        )
     )
 
 
-def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
+def classificar_um(p: dict, anterior: str = "", seguinte: str = "", *, em_abertura: bool | None = None) -> dict:
     texto = " ".join(p.get("texto", "").split())
     palavras = texto.split()
     estilo_original = (p.get("estilo_original") or "").casefold()
+    citacao = estilo_original in ESTILOS_CITACAO
+    if em_abertura is None:
+        em_abertura = p.get("posicao_relativa", 1) < 0.30
     estilo, conf, motivo = "FB - Corpo", 0.70, "Regra padrão; requer contexto semântico"
     if not texto:
         estilo, conf, motivo = "FB - Corpo", 1.0, "Parágrafo vazio preservado"
@@ -208,40 +238,40 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
         estilo, conf, motivo = "FB - Citação", 0.99, "Citação estrutural marcada no texto"
     elif RE_MARKDOWN_TABELA.search(texto):
         estilo, conf, motivo = "FB - Tabela", 0.99, "Linha de tabela estrutural marcada no texto"
-    elif RE_RESUMO.search(texto) or (p.get("posicao_relativa", 1) < 0.10 and RE_RESUMO.search(anterior)):
-        estilo, conf, motivo = "FB - Resumo", 0.98, "Resumo inicial identificado por rótulo ou sequência do bloco"
-    elif RE_ENDERECAMENTO.search(texto) or (
-        parece_vocativo_orgao(texto) and estilo_original not in {"quote", "citação", "citacao"}
-    ):
+    elif RE_RESUMO.search(texto):
+        estilo, conf, motivo = "FB - Resumo", 0.98, "Resumo inicial identificado por rótulo"
+    elif not citacao and (parece_enderecamento(texto) or em_abertura and estilo_original == "fb - endereçamento"):
         estilo, conf, motivo = "FB - Endereçamento", 0.99, "Fórmula de endereçamento judicial"
-    elif RE_NUMERO_UNICO.fullmatch(texto) or (RE_PROCESSO.search(texto) and len(palavras) <= 16):
-        estilo, conf, motivo = "FB - Identificação do Processo", 0.99, "Identificação curta de processo/autos"
+    elif em_abertura and not citacao and (RE_NUMERO_UNICO.fullmatch(texto) or RE_PROCESSO.fullmatch(texto)):
+        estilo, conf, motivo = "FB - Identificação do Processo", 0.99, "Identificação dos autos no bloco de abertura"
     elif parece_fechamento_local_data(p, texto, anterior, seguinte):
         estilo, conf, motivo = "FB - Fechamento", 0.99, "Linha de encerramento com local e data ou referência ao protocolo/assinatura"
-    elif parece_nome_assinatura(p, texto, anterior, seguinte):
+    elif not citacao and parece_nome_assinatura(p, texto, anterior, seguinte):
         estilo, conf, motivo = "FB - Assinatura", 0.98, "Nome do subscritor junto ao registro profissional"
+    elif not citacao and parece_linha_oab(texto):
+        estilo, conf, motivo = "FB - Assinatura", 0.98, "Registro profissional em linha própria"
+    elif not citacao and RE_DENOMINACAO_PECA.fullmatch(texto) and not estilo_original.startswith("fb - título"):
+        estilo, conf, motivo = "FB - Identificação da Ação", 0.99, "Denominação isolada da peça; não é seção argumentativa"
+    elif estilo_original in TITULOS_ORIGEM:
+        estilo, conf, motivo = TITULOS_ORIGEM[estilo_original], 0.99, "Nível do título no estilo estrutural original"
+    elif not citacao and RE_BLOCO_PEDIDOS.fullmatch(texto):
+        estilo, conf, motivo = "FB - Título Principal", 0.99, "Título do bloco de pedidos ou requerimentos"
     elif p.get("posicao_relativa", 1) < 0.30 and parece_qualificacao(texto):
         estilo, conf, motivo = "FB - Qualificação das Partes", 0.98, "Dados pessoais e representação no bloco inicial das partes"
-    elif RE_DENOMINACAO_PECA.fullmatch(texto) and estilo_original not in {"quote", "citação", "citacao"}:
-        estilo, conf, motivo = "FB - Identificação da Ação", 0.99, "Denominação isolada da peça; não é seção argumentativa"
-    elif estilo_original in {"heading 1", "título 1", "titulo 1"}:
-        estilo, conf, motivo = "FB - Título Principal", 0.99, "Título principal identificado pelo estilo estrutural original"
-    elif estilo_original in {"heading 2", "título 2", "titulo 2"}:
-        estilo, conf, motivo = "FB - Título Secundário", 0.99, "Título secundário identificado pelo estilo estrutural original"
-    elif (nivel := nivel_titulo_enumerado(texto)) and estilo_original not in {"quote", "citação", "citacao"}:
+    elif (nivel := nivel_titulo_enumerado(texto)) and not citacao:
         estilo = "FB - Título Principal" if nivel == 1 else "FB - Título Secundário"
         conf, motivo = 0.98, "Rótulo de seção com numeração explícita; não é item de lista"
-    elif (_caixa_alta(texto) or p.get("negrito")) and RE_ACAO.search(texto) and len(palavras) <= 18:
+    elif not citacao and (_caixa_alta(texto) or p.get("negrito")) and RE_ACAO.search(texto) and len(palavras) <= 18:
         estilo, conf, motivo = "FB - Identificação da Ação", 0.94, "Denominação curta da ação em destaque"
-    elif estilo_original in {"quote", "citação", "citacao"}:
+    elif citacao:
         estilo, conf, motivo = "FB - Citação", 0.99, "Estilo de citação identificado no documento original"
     elif RE_FECHAMENTO.search(texto):
         estilo, conf, motivo = "FB - Fechamento", 0.97, "Fórmula convencional de fechamento"
-    elif RE_ASSINATURA.search(texto) and len(palavras) <= 18:
-        estilo, conf, motivo = "FB - Assinatura", 0.96, "Referência curta a advogado ou OAB"
+    elif estilo_original == "fb - assinatura":
+        estilo, conf, motivo = "FB - Assinatura", 0.99, "Bloco de assinatura no estilo original do escritório"
     elif RE_PEDIDO.search(texto):
         estilo, conf, motivo = "FB - Corpo", 0.97, "Parágrafo introdutório do bloco de pedidos"
-    elif p.get("possui_numeracao") or RE_LISTA.search(texto):
+    elif p.get("possui_numeracao") or RE_LISTA.search(texto) or estilo_original in {"fb - lista", "fb - pedido"}:
         estilo, conf, motivo = "FB - Lista", 0.93, "Numeração estrutural ou marcador no início"
     elif _caixa_alta(texto) and len(palavras) <= 14:
         estilo = "FB - Título Principal" if p.get("posicao_relativa", 1) < 0.2 else "FB - Título Secundário"
@@ -265,27 +295,55 @@ def classificar_um(p: dict, anterior: str = "", seguinte: str = "") -> dict:
     }
 
 
+def _classificar_pedidos_finais(ps, itens) -> None:
+    limites = TITULOS | {"FB - Endereçamento", "FB - Fechamento", "FB - Assinatura"}
+    aberturas = [
+        i for i, item in enumerate(itens)
+        if item["estilo_destino"] in TITULOS and RE_BLOCO_PEDIDOS.fullmatch(item["texto"])
+    ]
+    if not aberturas:
+        for i, item in enumerate(itens):
+            if item["estilo_destino"] != "FB - Corpo" or not RE_PEDIDO.search(item["texto"]):
+                continue
+            proximos = (p for p in itens[i + 1:i + 12] if p["estilo_destino"] in limites)
+            if next(proximos, {}).get("estilo_destino") == "FB - Fechamento":
+                aberturas.append(i)
+    if not aberturas:
+        return
+    for i in range(aberturas[-1] + 1, len(itens)):
+        item = itens[i]
+        if item["estilo_destino"] in limites:
+            break
+        p = ps[i]
+        lista_numerada = p.get("possui_numeracao") and p.get("formato_lista") not in {"bullet", "none"}
+        lista = item["estilo_destino"] == "FB - Lista" and (lista_numerada or RE_LISTA_NUMERADA.search(item["texto"]))
+        # Há pedidos originalmente recuados com o estilo genérico Quote.
+        pedido_recuado = (
+            item["estilo_destino"] == "FB - Citação" and lista_numerada
+            and (p.get("estilo_original") or "").casefold() == "quote"
+        )
+        if lista or pedido_recuado:
+            item.update({
+                "categoria_provavel": "FB - Pedido",
+                "estilo_destino": "FB - Pedido",
+                "confianca": 0.99,
+                "motivo": "Item numerado do bloco final de pedidos",
+                "necessita_analise_semantica": False,
+            })
+
+
 def classificar(estrutura: dict) -> dict:
     ps = estrutura["paragrafos"]
     itens = []
     em_resumo = False
-    em_pedidos = False
+    linhas_abertura = 0
+    em_abertura = True
     for i, p in enumerate(ps):
         texto = " ".join(p.get("texto", "").split())
         if not texto:
             em_resumo = False
         elif RE_RESUMO.search(texto):
             em_resumo = True
-
-        fechamento_proximo = any(
-            parece_fechamento_local_data(proximo, proximo.get("texto", ""))
-            or RE_FECHAMENTO.search(proximo.get("texto", ""))
-            for proximo in ps[i + 1:i + 12]
-        )
-        if RE_BLOCO_PEDIDOS.search(texto) or (RE_PEDIDO.search(texto) and fechamento_proximo):
-            em_pedidos = True
-        elif em_pedidos and (parece_fechamento_local_data(p, texto) or RE_FECHAMENTO.search(texto)):
-            em_pedidos = False
 
         anterior = next(
             (ps[j].get("texto", "") for j in range(i - 1, -1, -1) if ps[j].get("texto", "").strip()),
@@ -295,8 +353,20 @@ def classificar(estrutura: dict) -> dict:
             (ps[j].get("texto", "") for j in range(i + 1, len(ps)) if ps[j].get("texto", "").strip()),
             "",
         )
-        item = classificar_um(p, anterior, seguinte)
-        if em_resumo and texto and p.get("posicao_relativa", 1) < 0.15:
+        item = classificar_um(p, anterior, seguinte, em_abertura=em_abertura and linhas_abertura < 12)
+        papel = item["estilo_destino"]
+        if papel == "FB - Endereçamento":
+            em_abertura, linhas_abertura, em_resumo = True, 0, False
+        elif texto:
+            linhas_abertura += 1
+            if (
+                papel in {"FB - Qualificação das Partes", "FB - Identificação da Ação", "FB - Fechamento"}
+                or papel in TITULOS and linhas_abertura > 1 and not item["necessita_analise_semantica"]
+                or papel != "FB - Identificação do Processo" and len(texto.split()) >= 20
+            ):
+                em_abertura = False
+        if (em_resumo and texto and p.get("posicao_relativa", 1) < 0.15
+                and papel not in TITULOS | {"FB - Endereçamento", "FB - Identificação do Processo"}):
             item.update({
                 "categoria_provavel": "FB - Resumo",
                 "estilo_destino": "FB - Resumo",
@@ -304,17 +374,8 @@ def classificar(estrutura: dict) -> dict:
                 "motivo": "Parágrafo integrante do bloco de resumo inicial",
                 "necessita_analise_semantica": False,
             })
-        if em_pedidos and texto and not RE_BLOCO_PEDIDOS.search(texto) and (
-            p.get("possui_numeracao") or RE_LISTA_NUMERADA.search(texto)
-        ):
-            item.update({
-                "categoria_provavel": "FB - Pedido",
-                "estilo_destino": "FB - Pedido",
-                "confianca": 0.99,
-                "motivo": "Item numerado integrante do bloco de pedidos",
-                "necessita_analise_semantica": False,
-            })
         itens.append(item)
+    _classificar_pedidos_finais(ps, itens)
     ambiguos = []
     for i, item in enumerate(itens):
         if item["necessita_analise_semantica"]:

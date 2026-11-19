@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resultado da formatação</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; }
+  h1 { margin: 0 0 8px; font-size: 1.125rem; }
+  p { margin: 0 0 12px; }
+  .arquivos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  button, .link { font: inherit; padding: 8px 12px; border-radius: 8px; }
+  button { border: 1px solid GrayText; background: Canvas; color: CanvasText; cursor: pointer; }
+  button:disabled { cursor: wait; opacity: .65; }
+  .link { display: inline-block; background: #24476a; color: white; text-decoration: none; }
+  .link[hidden] { display: none; }
+  summary { cursor: pointer; }
+  code { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+</style>
+<main>
+  <h1>Resultado da formatação</h1>
+  <p id="auditoria">Aguardando o resultado…</p>
+  <div class="arquivos" id="arquivos"></div>
+  <p id="status" role="status" hidden></p>
+  <a id="link" class="link" target="_blank" rel="noopener noreferrer" hidden></a>
+  <details id="local" hidden>
+    <summary>Pasta no computador do formatador</summary>
+    <code id="pasta"></code>
+  </details>
+</main>
+<script>
+  const auditoria = document.getElementById("auditoria");
+  const arquivos = document.getElementById("arquivos");
+  const status = document.getElementById("status");
+  const link = document.getElementById("link");
+  const local = document.getElementById("local");
+  const pasta = document.getElementById("pasta");
+  let execucaoAtual;
+
+  function metadados(resposta) {
+    return resposta?.mcp_tool_result?._meta
+      ?? resposta?.call_tool_result?._meta
+      ?? resposta?._meta
+      ?? resposta;
+  }
+
+  function informar(texto) {
+    status.textContent = texto;
+    status.hidden = !texto;
+  }
+
+  async function prepararDownload(execucao, nome, botao) {
+    const app = window.openai;
+    if (!app?.callTool || !app?.uploadFile || !app?.getFileDownloadUrl) {
+      informar("Abra a pasta no computador do formatador para obter o arquivo.");
+      return;
+    }
+    link.hidden = true;
+    botao.disabled = true;
+    informar("Preparando o download…");
+    try {
+      const resposta = await app.callTool("baixar_resultado_formatador", { execucao, nome });
+      const dados = metadados(resposta);
+      if (!dados?.base64) throw new Error("Arquivo indisponível");
+      const bytes = Uint8Array.from(atob(dados.base64), caractere => caractere.charCodeAt(0));
+      const arquivo = new File([bytes], dados.nome, { type: dados.mime_type });
+      const { fileId } = await app.uploadFile(arquivo);
+      const { downloadUrl } = await app.getFileDownloadUrl({ fileId });
+      if (new URL(downloadUrl).origin !== "https://files.oaiusercontent.com") {
+        throw new Error("Origem inesperada");
+      }
+      if (execucaoAtual !== execucao) return;
+      link.href = downloadUrl;
+      link.textContent = "Baixar " + dados.nome;
+      link.onclick = app.openExternal ? evento => {
+        evento.preventDefault();
+        app.openExternal({ href: downloadUrl, redirectUrl: false });
+      } : null;
+      link.hidden = false;
+      informar("");
+    } catch {
+      if (execucaoAtual === execucao) {
+        informar("O download pelo ChatGPT está indisponível. Abra a pasta no computador do formatador.");
+      }
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
+  function mostrar(globais = window.openai) {
+    const resultado = globais?.toolOutput ?? window.openai?.toolOutput;
+    const dados = metadados(globais?.toolResponseMetadata ?? window.openai?.toolResponseMetadata);
+    if (!resultado || !dados?.execucao || dados.execucao === execucaoAtual) return;
+    execucaoAtual = dados.execucao;
+    const total = resultado.pendencias_semanticas;
+    auditoria.textContent = resultado.auditoria_aprovada
+      ? "Auditoria aprovada. Confira a aparência no Word."
+      : "Versão para revisão. " + (total ? `${total} pendência(s) semântica(s).` : "Confira a formatação no Word.");
+    pasta.textContent = dados.pasta;
+    local.hidden = !dados.pasta;
+    link.hidden = true;
+    informar("");
+    arquivos.replaceChildren();
+    for (const arquivo of dados.arquivos) {
+      const botao = document.createElement("button");
+      botao.type = "button";
+      botao.textContent = arquivo.rotulo;
+      botao.addEventListener("click", () => prepararDownload(dados.execucao, arquivo.nome, botao));
+      arquivos.append(botao);
+    }
+  }
+
+  window.addEventListener("openai:set_globals", evento => mostrar(evento.detail?.globals));
+  mostrar();
+</script>
+</html>

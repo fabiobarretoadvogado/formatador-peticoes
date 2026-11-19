@@ -61,7 +61,6 @@ class ResultadoIngestao:
     formato_original: str
     entrada_docx: Path
     docx_intermediario: Path | None
-    manifesto: Path
     dados: dict
 
 
@@ -122,12 +121,12 @@ def _criar_numeracao(doc: DocumentoDocx, formato: str, inicio: int = 1) -> str:
     ppr.append(recuo)
     nivel.append(ppr)
     abstrato.append(nivel)
-    numeracao.append(abstrato)
+    numeracao.insert_element_before(abstrato, "w:num", "w:numIdMacAtCleanup")
 
     lista = OxmlElement("w:num")
     lista.set(qn("w:numId"), num_id)
     lista.append(_filho("abstractNumId", abstract_id))
-    numeracao.append(lista)
+    numeracao.insert_element_before(lista, "w:numIdMacAtCleanup")
     return num_id
 
 
@@ -411,14 +410,13 @@ def converter_markdown(
     markdown: Path,
     modelo: Path,
     saida: Path,
-    manifesto: Path,
+    manifesto: Path | None = None,
     *,
     perfil_markdown: dict | None = None,
 ) -> dict:
     markdown = markdown.expanduser().resolve()
     modelo = modelo.expanduser().resolve()
     saida = saida.expanduser().resolve()
-    manifesto = manifesto.expanduser().resolve()
     texto_original = markdown.read_text(encoding="utf-8-sig")
     if RE_NOTA_RODAPE.search(texto_original):
         raise RecursoMarkdownNaoSuportado("Notas de rodapé Markdown ainda não são suportadas")
@@ -511,7 +509,8 @@ def converter_markdown(
             "hash_estrutura_apos_gravar": hash_gravado,
         },
     }
-    salvar_json(manifesto, dados)
+    if manifesto is not None:
+        salvar_json(manifesto.expanduser().resolve(), dados)
     return dados
 
 
@@ -523,17 +522,15 @@ def normalizar_entrada(
     perfil_markdown: dict | None = None,
 ) -> ResultadoIngestao:
     entrada = entrada.expanduser().resolve()
-    manifesto = root / "trabalho" / "manifesto_entrada.json"
     if entrada.suffix.casefold() == ".md":
         intermediario = root / "trabalho" / "entrada_intermediaria.docx"
         dados = converter_markdown(
             entrada,
             modelo,
             intermediario,
-            manifesto,
             perfil_markdown=perfil_markdown,
         )
-        return ResultadoIngestao(entrada, "markdown", intermediario, intermediario, manifesto, dados)
+        return ResultadoIngestao(entrada, "markdown", intermediario, intermediario, dados)
     if entrada.suffix.casefold() == ".docx":
         dados = {
             "versao_manifesto": 1,
@@ -550,6 +547,5 @@ def normalizar_entrada(
             "avisos": [],
             "auditoria_conteudo": {"aprovada": True, "modo": "entrada DOCX nativa"},
         }
-        salvar_json(manifesto, dados)
-        return ResultadoIngestao(entrada, "docx", entrada, None, manifesto, dados)
+        return ResultadoIngestao(entrada, "docx", entrada, None, dados)
     raise ValueError("Informe uma petição inicial existente em DOCX ou Markdown (.md)")

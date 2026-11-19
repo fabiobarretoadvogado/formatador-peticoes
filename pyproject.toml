@@ -1,12 +1,13 @@
 [project]
 name = "formatador-peticoes"
-version = "1.0.4"
+version = "1.0.10"
 description = "Padronização auditável de petições iniciais em DOCX"
 requires-python = ">=3.10"
 dependencies = ["python-docx>=1.1", "Pillow>=10", "markdown-it-py>=4.2", "pywin32>=306; platform_system == 'Windows'"]
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.10"]
+mcp = ["mcp>=1.30,<2"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -17,6 +18,9 @@ py-modules = ["aplicativo", "app_version"]
 
 [tool.setuptools.packages.find]
 include = ["scripts*"]
+
+[tool.setuptools.package-data]
+scripts = ["mcp_resultado.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

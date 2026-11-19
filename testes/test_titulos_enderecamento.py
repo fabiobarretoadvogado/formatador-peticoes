@@ -50,6 +50,10 @@ class TitulosEnderecamentoTests(unittest.TestCase):
             "AO EGRÉGIO TRIBUNAL REGIONAL FEDERAL DA 5ª REGIÃO",
             "COLENDA TURMA",
             "À EGRÉGIA CÂMARA CÍVEL",
+            "AO PRESIDENTE DO TRIBUNAL REGIONAL DO TRABALHO DA 20ª REGIÃO",
+            "AO 1º JUIZADO ESPECIAL DA FAZENDA PÚBLICA DA COMARCA DE ARACAJU/SE",
+            "AO _ JUÍZO DA VARA CÍVEL",
+            "AO _ JUIZADO ESPECIAL DA FAZENDA PÚBLICA DE SÃO LUÍS / MA",
         ):
             with self.subTest(texto=texto):
                 item = classificar_um(self.paragrafo(texto, estilo_original="Heading 1"))
@@ -61,6 +65,7 @@ class TitulosEnderecamentoTests(unittest.TestCase):
             "O Egrégio Superior Tribunal de Justiça decidiu sobre a matéria.",
             "Conforme decidiu o Egrégio Tribunal de Justiça, aplica-se o entendimento.",
             "Egrégio Superior Tribunal de Justiça decidiu pela improcedência do pedido.",
+            "À Vara Cível foi remetida a requisição.",
         ):
             with self.subTest(texto=texto):
                 self.assertNotEqual(classificar_um(self.paragrafo(texto))["estilo_destino"], "FB - Endereçamento")
@@ -78,6 +83,59 @@ class TitulosEnderecamentoTests(unittest.TestCase):
         self.assertEqual([p["estilo_destino"] for p in classificar(estrutura)["classificacoes"]], [
             "FB - Título Principal", "FB - Título Principal", "FB - Pedido", "FB - Pedido",
         ])
+
+    def test_preserva_hierarquia_e_limita_pedidos_ao_bloco_final(self):
+        entradas = (
+            ("DOS PEDIDOS DE ARRESTO", "FB - Título Secundário", "FB - Título Secundário"),
+            ("1. Documento de apoio;", "Normal", "FB - Lista"),
+            ("DOS PEDIDOS E DOS REQUERIMENTOS FINAIS", "FB - Título Principal", "FB - Título Principal"),
+            ("II. A procedência dos pedidos;", "Normal", "FB - Pedido"),
+            ("DO VALOR DA CAUSA", "FB - Título Principal", "FB - Título Principal"),
+            ("1. Critério para o cálculo;", "Normal", "FB - Lista"),
+        )
+        estrutura = {"documento": "amostra", "paragrafos": [
+            self.paragrafo(texto, id=i, estilo_original=estilo)
+            for i, (texto, estilo, _) in enumerate(entradas, 1)
+        ]}
+        self.assertEqual(
+            [i["estilo_destino"] for i in classificar(estrutura)["classificacoes"]],
+            [esperado for _, _, esperado in entradas],
+        )
+
+    def test_sequencia_romana_dos_pedidos_nao_muda_lista_geral(self):
+        from docx import Document
+        from scripts.numeracao_word import formatos_das_listas, numeracao_do_paragrafo
+        from scripts.pipeline import executar
+
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp:
+            pasta = Path(temp)
+            origem = pasta / "lista.docx"
+            doc = Document()
+            doc.add_paragraph("Dos fatos", style="Heading 1")
+            doc.add_paragraph("Cópia do contrato.", style="List Number")
+            doc.add_paragraph("Dos pedidos e dos requerimentos", style="Heading 1")
+            doc.add_paragraph("Diante do exposto, requer-se:")
+            doc.add_paragraph("A procedência da ação.", style="List Number")
+            doc.add_paragraph("A produção de provas.", style="List Number")
+            doc.add_paragraph("Nestes termos, pede deferimento.")
+            doc.save(origem)
+            resultado = executar(origem, work_root=pasta / "teste", modelos_raiz=root / "modelos")
+            word = Document(resultado["docx"])
+            geral, primeiro, segundo = (word.paragraphs[i] for i in (1, 4, 5))
+            self.assertEqual([p.style.name for p in (geral, primeiro, segundo)], ["FB - Lista", "FB - Pedido", "FB - Pedido"])
+            ids = [str(numeracao_do_paragrafo(p).numId.val) for p in (geral, primeiro, segundo)]
+            self.assertNotEqual(ids[0], ids[1])
+            self.assertEqual(ids[1], ids[2])
+            formatos = formatos_das_listas(word)
+            self.assertEqual([formatos[(i, "0")] for i in ids], ["decimal", "upperRoman", "upperRoman"])
+            numeracao = word.part.numbering_part.element
+            abstratos = [numeracao.num_having_numId(int(i)).abstractNumId.val for i in ids[:2]]
+            identidades = [
+                numeracao.xpath(f"w:abstractNum[@w:abstractNumId='{i}']/w:nsid/@w:val")
+                for i in abstratos
+            ]
+            self.assertNotEqual(identidades[0], identidades[1])
 
     def test_docx_aplica_enderecamento_e_titulo_com_numeracao_nativa(self):
         from docx import Document

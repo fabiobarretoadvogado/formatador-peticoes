@@ -8,31 +8,29 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scripts.aplicar_estilos import aplicar
+    from scripts.assinatura_local import AssinaturaLocal, carregar_assinatura_local
     from scripts.classificar_regras import classificar
-    from scripts.comum import ROOT, TIPO_PECA_SUPORTADO, backup_entrada, carregar_json, garantir_diretorios, salvar_json
-    from scripts.configurar_visibilidade_estilos import ajustar_arquivo
+    from scripts.comum import ROOT, TIPO_PECA_SUPORTADO, backup_entrada, carregar_json, nome_seguro, publicar_docx
+    from scripts.configurar_visibilidade_estilos import IDIOMA_REVISAO, ajustar_arquivo
     from scripts.converter_markdown import normalizar_entrada
     from scripts.extrair_documento import extrair
-    from scripts.gerar_pdf import gerar_pdf
-    from scripts.gerar_relatorio import gerar_relatorio
     from scripts.validar_documento import validar
 else:
     from .aplicar_estilos import aplicar
+    from .assinatura_local import AssinaturaLocal, carregar_assinatura_local
     from .classificar_regras import classificar
-    from .comum import ROOT, TIPO_PECA_SUPORTADO, backup_entrada, carregar_json, garantir_diretorios, salvar_json
-    from .configurar_visibilidade_estilos import ajustar_arquivo
+    from .comum import ROOT, TIPO_PECA_SUPORTADO, backup_entrada, carregar_json, nome_seguro, publicar_docx
+    from .configurar_visibilidade_estilos import IDIOMA_REVISAO, ajustar_arquivo
     from .converter_markdown import normalizar_entrada
     from .extrair_documento import extrair
-    from .gerar_pdf import gerar_pdf
-    from .gerar_relatorio import gerar_relatorio
     from .validar_documento import validar
 
 
-def _consolidar(classificacao: dict, semantica: Path | None, config: dict) -> int:
-    if not semantica or not semantica.exists():
+def _consolidar(classificacao: dict, semantica: Path | dict | None, config: dict) -> int:
+    if semantica is None or isinstance(semantica, Path) and not semantica.exists():
         return 0
     permitidos = set(config["estilos_permitidos"])
-    respostas = carregar_json(semantica)
+    respostas = carregar_json(semantica) if isinstance(semantica, Path) else semantica
     if isinstance(respostas, dict):
         respostas = respostas.get("classificacoes", respostas.get("respostas", []))
     if not isinstance(respostas, list):
@@ -63,10 +61,9 @@ def _consolidar(classificacao: dict, semantica: Path | None, config: dict) -> in
     return len(resolvidos)
 
 
-def _carregar_artefatos(root: Path) -> tuple[Path, dict]:
-    garantir_diretorios(root)
-    modelo = root / "modelos" / "modelo_oficial.docx"
-    config_path = root / "modelos" / "estilos.json"
+def _carregar_artefatos(modelos: Path) -> tuple[Path, dict]:
+    modelo = modelos / "modelo_oficial.docx"
+    config_path = modelos / "estilos.json"
     ausentes = [caminho for caminho in (modelo, config_path) if not caminho.is_file()]
     if ausentes:
         lista = ", ".join(str(caminho) for caminho in ausentes)
@@ -86,17 +83,17 @@ def _carregar_artefatos(root: Path) -> tuple[Path, dict]:
 
 def executar_docx(
     entrada: Path,
-    semantica: Path | None = None,
-    skip_pdf: bool = False,
+    semantica: Path | dict | None = None,
     work_root: Path | None = None,
     *,
+    modelos_raiz: Path | None = None,
     metadados_entrada: dict | None = None,
-    manifesto_entrada: Path | None = None,
     backup_original: Path | None = None,
+    assinatura: AssinaturaLocal | None = None,
 ) -> dict:
     """Executa o núcleo estável do formatador sobre uma entrada DOCX."""
     root = (work_root or ROOT).resolve()
-    modelo, config = _carregar_artefatos(root)
+    modelo, config = _carregar_artefatos(modelos_raiz or root / "modelos")
     entrada = entrada.resolve()
     if not entrada.exists() or entrada.suffix.lower() != ".docx": raise ValueError("Informe um arquivo DOCX existente")
     metadados_entrada = metadados_entrada or {
@@ -109,73 +106,60 @@ def executar_docx(
     }
     estrutura = extrair(entrada)
     backup = backup_original or backup_entrada(entrada, root)
-    salvar_json(root / "trabalho" / "estrutura_documento.json", estrutura)
-    classificacao = classificar(estrutura); _consolidar(classificacao, semantica, config)
-    salvar_json(root / "trabalho" / "classificacao.json", classificacao)
-    salvar_json(root / "trabalho" / "solicitacoes_semanticas.json", {
-        "instrucoes": (
-            "Use o catalogo_semantico para decidir a funcao do paragrafo. "
-            "O escopo atual e exclusivamente peticao inicial; nao aplique estruturas proprias de outras pecas. "
-            "Nao escolha apenas pela aparencia visual do modelo. "
-            "Responda com id, estilo_destino, confianca e justificativa; "
-            "use apenas estilos permitidos."
-        ),
+    classificacao = classificar(estrutura)
+    _consolidar(classificacao, semantica, config)
+    saida_docx = root / "saida" / "peticao_formatada.docx"
+    aplicacao = aplicar(entrada, modelo, classificacao, config, saida_docx, assinatura=assinatura)
+    paragrafos_assinatura = set(aplicacao["paragrafos_assinatura_local"])
+    pendencias = [item for item in classificacao["ambiguos"] if item["id"] not in paragrafos_assinatura]
+    solicitacoes = {
         "estilos_permitidos": config["estilos_permitidos"],
         "tipo_peca": TIPO_PECA_SUPORTADO,
         "regras_contextuais": config.get("regras_contextuais", {}),
         "formatacao_estilos": config.get("formatacao_estilos", {}),
         "catalogo_semantico": config.get("catalogo_semantico", {}),
-        "itens": classificacao["ambiguos"],
-    })
-    saida_docx = root / "saida" / "peticao_formatada.docx"
-    aplicacao = aplicar(entrada, modelo, classificacao, config, saida_docx)
+        "itens": pendencias,
+    }
     # The formatter imports the authored styles into the output document. Apply
     # the same visibility policy to the final package so Word does not expose
     # its built-in styles in the user-facing style pane.
-    with tempfile.TemporaryDirectory(dir=root / "trabalho") as temporario_dir:
+    trabalho = root / "trabalho"
+    trabalho.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=trabalho) as temporario_dir:
         temporario = Path(temporario_dir) / saida_docx.name
-        ajustar_arquivo(saida_docx, temporario, config["estilos_permitidos"])
+        ajustar_arquivo(saida_docx, temporario, config["estilos_permitidos"], idioma_revisao=IDIOMA_REVISAO)
         temporario.replace(saida_docx)
     auditoria = validar(saida_docx, config, aplicacao)
-    pendencias_semanticas = len(classificacao["ambiguos"])
+    pendencias_semanticas = len(pendencias)
     auditoria["resumo"]["pendencias_semanticas"] = pendencias_semanticas
     auditoria["resumo"]["aprovado"] = auditoria["resumo"]["aprovado"] and pendencias_semanticas == 0
-    salvar_json(root / "trabalho" / "auditoria.json", auditoria)
-    relatorio = gerar_relatorio(
-        estrutura,
-        classificacao,
-        auditoria,
-        root / "saida" / "relatorio_formatacao.md",
-        metadados_entrada=metadados_entrada,
-    )
-    pdf, erro_pdf, pdf_gerado = root / "saida" / "peticao_formatada.pdf", None, False
-    if not skip_pdf:
-        try:
-            gerar_pdf(saida_docx, pdf)
-            pdf_gerado = True
-        except Exception as exc: erro_pdf = str(exc)
     return {
         "docx": str(saida_docx),
-        "pdf": str(pdf) if pdf_gerado else None,
-        "relatorio": str(relatorio),
         "backup": str(backup),
         "tipo_peca": TIPO_PECA_SUPORTADO,
-        "ambiguos": len(classificacao["ambiguos"]),
-        "erro_pdf": erro_pdf,
+        "ambiguos": pendencias_semanticas,
         "aprovado": auditoria["resumo"]["aprovado"],
         "entrada_original": metadados_entrada.get("origem", str(entrada)),
         "formato_original": metadados_entrada.get("formato_original", "docx"),
         "entrada_pipeline": str(entrada),
         "docx_intermediario": metadados_entrada.get("docx_intermediario"),
-        "manifesto_ingestao": str(manifesto_entrada) if manifesto_entrada else None,
         "metadados_entrada": metadados_entrada,
+        "solicitacoes_semanticas": solicitacoes,
+        "auditoria": auditoria,
     }
 
 
-def executar(entrada: Path, semantica: Path | None = None, skip_pdf: bool = False, work_root: Path | None = None) -> dict:
+def executar(
+    entrada: Path,
+    semantica: Path | dict | None = None,
+    work_root: Path | None = None,
+    *,
+    modelos_raiz: Path | None = None,
+    assinatura: AssinaturaLocal | None = None,
+) -> dict:
     """Normaliza DOCX/Markdown e encaminha um DOCX auditado ao núcleo."""
     root = (work_root or ROOT).resolve()
-    modelo, config = _carregar_artefatos(root)
+    modelo, config = _carregar_artefatos(modelos_raiz or root / "modelos")
     entrada = entrada.expanduser().resolve()
     if not entrada.is_file() or entrada.suffix.casefold() not in {".docx", ".md"}:
         raise ValueError("Informe uma petição inicial existente em DOCX ou Markdown (.md)")
@@ -190,13 +174,13 @@ def executar(entrada: Path, semantica: Path | None = None, skip_pdf: bool = Fals
         perfil_markdown=config.get("perfil_markdown"),
     )
     return executar_docx(
-        ingestao.entrada_docx,
+        backup if formato == "docx" else ingestao.entrada_docx,
         semantica=semantica,
-        skip_pdf=skip_pdf,
         work_root=root,
+        modelos_raiz=modelos_raiz,
         metadados_entrada=ingestao.dados,
-        manifesto_entrada=ingestao.manifesto,
         backup_original=backup,
+        assinatura=assinatura,
     )
 
 
@@ -204,10 +188,18 @@ def main():
     ap = argparse.ArgumentParser(description="Padroniza uma petição DOCX ou Markdown sem alterar o original")
     ap.add_argument("entrada", type=Path)
     ap.add_argument("--semantica", type=Path)
-    ap.add_argument("--skip-pdf", action="store_true")
-    ap.add_argument("--work-root", type=Path, help="Pasta isolada para esta execução")
+    ap.add_argument("--skip-pdf", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--work-root", type=Path, help="Pasta que contém os modelos oficiais")
+    ap.add_argument("--saida", type=Path, help="Pasta de destino do Word formatado")
     args = ap.parse_args()
-    print(executar(args.entrada, args.semantica, args.skip_pdf, args.work_root))
+    entrada = args.entrada.expanduser().resolve()
+    modelos = (args.work_root or ROOT) / "modelos"
+    destino = (args.saida or entrada.parent).expanduser().resolve()
+    with tempfile.TemporaryDirectory(prefix="formatador-") as temporario:
+        resultado = executar(
+            entrada, args.semantica, Path(temporario), modelos_raiz=modelos, assinatura=carregar_assinatura_local(),
+        )
+        print(publicar_docx(Path(resultado["docx"]), destino, nome_seguro(entrada.stem)))
 
 
 if __name__ == "__main__": main()
